@@ -8,7 +8,7 @@ type ThemePreference = ThemeName | "system";
 export type TabsLayout = "tabs" | "list";
 export type ToolbarRows = "single" | "double";
 
-const VALID: ThemePreference[] = ["classic", "light", "dark", "retro", "modern", "cyberpunk", "system"];
+const VALID: ThemePreference[] = ["classic", "light", "dark", "retro", "modern", "cyberpunk", "sunset", "system"];
 const VALID_TABS: TabsLayout[] = ["tabs", "list"];
 const VALID_ROWS: ToolbarRows[] = ["single", "double"];
 

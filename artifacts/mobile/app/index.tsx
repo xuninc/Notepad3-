@@ -27,7 +27,7 @@ import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
 
-type ThemeChoiceId = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "system";
+type ThemeChoiceId = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset" | "system";
 type ThemeChoice = { id: ThemeChoiceId; label: string; hint: string };
 const themeChoices: ThemeChoice[] = [
   { id: "classic", label: "Classic", hint: "Notepad2 on Windows 7 Aero" },
@@ -36,6 +36,7 @@ const themeChoices: ThemeChoice[] = [
   { id: "retro", label: "Retro", hint: "Windows 95 chrome" },
   { id: "modern", label: "Modern", hint: "Soft, rounded, indigo" },
   { id: "cyberpunk", label: "Cyberpunk", hint: "Neon magenta and cyan" },
+  { id: "sunset", label: "Rachel's Sunset", hint: "Orange, turquoise and hot pink" },
   { id: "system", label: "Match system", hint: "Follow the iPhone setting" },
 ];
 

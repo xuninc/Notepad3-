@@ -1,4 +1,4 @@
-export type ThemeName = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk";
+export type ThemeName = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset";
 
 export type Palette = {
   text: string;
@@ -165,6 +165,33 @@ export const themes: Record<ThemeName, Palette> = {
     titleGradient: ["#ffffff", "#f8fafc"],
     chromeGradient: ["#ffffff", "#f1f5f9"],
     highlight: "#ffffff",
+  },
+  sunset: {
+    text: "#2a0f2a",
+    tint: "#ff3d8a",
+    background: "#fff1e6",
+    foreground: "#2a0f2a",
+    card: "#ffe2cf",
+    cardForeground: "#2a0f2a",
+    primary: "#ff3d8a",
+    primaryForeground: "#ffffff",
+    secondary: "#ffd0bd",
+    secondaryForeground: "#2a0f2a",
+    muted: "#fff5ec",
+    mutedForeground: "#7a2a4f",
+    accent: "#2ec4b6",
+    accentForeground: "#ffffff",
+    destructive: "#c0264e",
+    destructiveForeground: "#ffffff",
+    border: "#ff7a3d",
+    input: "#ff7a3d",
+    editorBackground: "#fffaf3",
+    editorGutter: "#ffe7d4",
+    success: "#2ec4b6",
+    radius: 8,
+    titleGradient: ["#ff7a3d", "#ff3d8a"],
+    chromeGradient: ["#ffd9bf", "#ffe9d6"],
+    highlight: "#2ec4b6",
   },
   cyberpunk: {
     text: "#f0f6ff",
