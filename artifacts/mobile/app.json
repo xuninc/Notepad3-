@@ -14,7 +14,8 @@
       "backgroundColor": "#111826"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.corey.ios.np3plusplus"
     },
     "android": {},
     "web": {
