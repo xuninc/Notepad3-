@@ -23,11 +23,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CUSTOM_PALETTE_KEYS, customDefaults, customPaletteLabels, CustomPaletteKey } from "@/constants/colors";
 import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
 
-type ThemeChoiceId = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset" | "system";
+type ThemeChoiceId = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset" | "custom" | "system";
 type ThemeChoice = { id: ThemeChoiceId; label: string; hint: string };
 const themeChoices: ThemeChoice[] = [
   { id: "classic", label: "Classic", hint: "Notepad2 on Windows 7 Aero" },
@@ -37,7 +38,19 @@ const themeChoices: ThemeChoice[] = [
   { id: "modern", label: "Modern", hint: "Soft, rounded, indigo" },
   { id: "cyberpunk", label: "Cyberpunk", hint: "Neon magenta and cyan" },
   { id: "sunset", label: "Rachel's Sunset", hint: "Orange, turquoise and hot pink" },
+  { id: "custom", label: "Custom", hint: "Pick your own colors" },
   { id: "system", label: "Match system", hint: "Follow the iPhone setting" },
+];
+
+const customSwatches: string[] = [
+  "#ffffff", "#f5f5f5", "#e6e6e6", "#cccccc", "#888888", "#444444", "#1a1a1a", "#000000",
+  "#fff6fa", "#ffe8f1", "#ffd6e6", "#ffb3d1", "#ff7aae", "#ff3d8a", "#e0246b", "#a01657",
+  "#fff5e6", "#ffd9b3", "#ffb380", "#ff944d", "#ff7a3d", "#e85a1f", "#b3420f", "#7a2a08",
+  "#fff9d6", "#fff066", "#ffe029", "#f5c518", "#d4a017", "#a87c10", "#7a5a0a", "#3d2d05",
+  "#e6f7e6", "#c7ecc7", "#8fd9b8", "#4ec07d", "#2a9d5a", "#1e7a44", "#155a30", "#0b3a1e",
+  "#e6f1fb", "#cfe6df", "#d6ecff", "#a9d2f5", "#5fa8e0", "#2d7dc4", "#1a4f8a", "#0d2e57",
+  "#f0e6ff", "#d6c7ff", "#b39bff", "#8a66ff", "#5a3de0", "#3d24a8", "#251466", "#120a33",
+  "#3a1a3a", "#5a2a5a", "#6e3a5e", "#1f3a3a", "#3d6e6e", "#4f6e6e", "#1f3a5a", "#0b0820",
 ];
 
 type DiffStatus = "same" | "added" | "removed" | "changed";
@@ -434,7 +447,7 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, palette, radius } = useTheme();
+  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
   const [toolbarTip, setToolbarTip] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTip = useCallback((text: string) => {
@@ -1201,6 +1214,39 @@ export default function NotepadScreen() {
                     </Pressable>
                   );
                 })}
+                {preference === "custom" ? (
+                  <View style={{ marginTop: 10, padding: 8, borderWidth: 1, borderColor: colors.border, borderRadius: Math.min(radius, 4), backgroundColor: colors.muted }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 0 }]}>Custom palette</Text>
+                      <Pressable onPress={resetCustomPalette} style={({ pressed }) => [{ paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 3, backgroundColor: pressed ? colors.secondary : "transparent" }]} testID="custom-reset">
+                        <Text style={{ fontFamily: mono, fontSize: 10, color: colors.foreground }}>Reset</Text>
+                      </Pressable>
+                    </View>
+                    {CUSTOM_PALETTE_KEYS.map((k: CustomPaletteKey) => {
+                      const current = customPalette[k] ?? customDefaults[k];
+                      const meta = customPaletteLabels[k];
+                      return (
+                        <View key={k} style={{ marginBottom: 8 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <View style={{ width: 18, height: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: current, borderRadius: 3 }} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontFamily: mono, fontSize: 11, color: colors.foreground, fontWeight: "600" }}>{meta.label}</Text>
+                              <Text style={{ fontFamily: mono, fontSize: 9, color: colors.mutedForeground }}>{meta.hint} — {current}</Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+                            {customSwatches.map((sw) => {
+                              const selected = sw.toLowerCase() === current.toLowerCase();
+                              return (
+                                <Pressable key={`${k}-${sw}`} onPress={() => setCustomColor(k, sw)} testID={`swatch-${k}-${sw}`} style={({ pressed }) => [{ width: 22, height: 22, borderRadius: 3, backgroundColor: sw, borderWidth: selected ? 2 : 1, borderColor: selected ? colors.foreground : colors.border, opacity: pressed ? 0.7 : 1 }]} />
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
                 <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Document tabs</Text>
                 {([{ id: "tabs" as const, label: "Tabs", hint: "Notepad++ style row of tabs" }, { id: "list" as const, label: "Dropdown list", hint: "One bar that opens a list of open documents" }]).map((opt) => {
                   const selected = tabsLayout === opt.id;

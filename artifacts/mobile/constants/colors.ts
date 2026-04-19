@@ -1,4 +1,92 @@
-export type ThemeName = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset";
+export type ThemeName = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset" | "custom";
+
+export const CUSTOM_PALETTE_KEYS = [
+  "background",
+  "foreground",
+  "primary",
+  "secondary",
+  "accent",
+  "border",
+  "muted",
+  "editorBackground",
+  "highlight",
+  "destructive",
+  "titleGradientStart",
+  "titleGradientEnd",
+  "chromeGradientStart",
+  "chromeGradientEnd",
+] as const;
+export type CustomPaletteKey = typeof CUSTOM_PALETTE_KEYS[number];
+
+export type CustomPaletteOverrides = Partial<Record<CustomPaletteKey, string>>;
+
+export const customDefaults: Record<CustomPaletteKey, string> = {
+  background: "#fff6fa",
+  foreground: "#3a1a3a",
+  primary: "#ff3d8a",
+  secondary: "#ffd6e6",
+  accent: "#ff7a3d",
+  border: "#ffb3d1",
+  muted: "#eaf3fb",
+  editorBackground: "#fffafd",
+  highlight: "#ff3d8a",
+  destructive: "#c0264e",
+  titleGradientStart: "#ff7a3d",
+  titleGradientEnd: "#ff3d8a",
+  chromeGradientStart: "#d8f1e4",
+  chromeGradientEnd: "#d6ecff",
+};
+
+export const customPaletteLabels: Record<CustomPaletteKey, { label: string; hint: string }> = {
+  background: { label: "Background", hint: "Main app surface" },
+  foreground: { label: "Text", hint: "Primary text color" },
+  primary: { label: "Primary", hint: "Buttons, active tab, save indicator" },
+  secondary: { label: "Secondary", hint: "Soft button fills" },
+  accent: { label: "Accent", hint: "Highlight icon and stamps" },
+  border: { label: "Borders", hint: "Frames and dividers" },
+  muted: { label: "Muted", hint: "Subtle backgrounds and inactive tabs" },
+  editorBackground: { label: "Editor", hint: "Text editing surface" },
+  highlight: { label: "Highlight", hint: "Find matches and focus" },
+  destructive: { label: "Destructive", hint: "Delete and warning" },
+  titleGradientStart: { label: "Title bar (start)", hint: "Top of title gradient" },
+  titleGradientEnd: { label: "Title bar (end)", hint: "Bottom of title gradient" },
+  chromeGradientStart: { label: "Chrome (start)", hint: "Top of toolbar background" },
+  chromeGradientEnd: { label: "Chrome (end)", hint: "Bottom of toolbar background" },
+};
+
+export function buildCustomPalette(overrides: CustomPaletteOverrides): Palette {
+  const v = { ...customDefaults, ...overrides };
+  const lighten = (hex: string, _amt = 0.85) => hex;
+  return {
+    text: v.foreground,
+    tint: v.primary,
+    background: v.background,
+    foreground: v.foreground,
+    card: v.background,
+    cardForeground: v.foreground,
+    primary: v.primary,
+    primaryForeground: "#ffffff",
+    secondary: v.secondary,
+    secondaryForeground: v.foreground,
+    muted: v.muted,
+    mutedForeground: v.foreground,
+    accent: v.accent,
+    accentForeground: "#ffffff",
+    destructive: v.destructive,
+    destructiveForeground: "#ffffff",
+    border: v.border,
+    input: v.border,
+    editorBackground: v.editorBackground,
+    editorGutter: v.muted,
+    success: v.accent,
+    radius: 8,
+    titleGradient: [v.titleGradientStart, v.titleGradientEnd],
+    chromeGradient: [v.chromeGradientStart, v.chromeGradientEnd],
+    highlight: v.highlight,
+    fontWeightHeavy: false,
+  };
+  void lighten;
+}
 
 export type Palette = {
   text: string;
