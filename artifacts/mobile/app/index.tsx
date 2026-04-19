@@ -744,9 +744,15 @@ export default function NotepadScreen() {
                   <>
                     <DropdownItem label="New" hint="Blank note" onPress={() => { createNote(); setOpenMenu(null); }} />
                     <DropdownItem label="Open from Files..." onPress={() => { setOpenMenu(null); importFromFiles(); }} />
-                    <DropdownItem label="Duplicate" onPress={() => { duplicateActiveNote(); setOpenMenu(null); }} />
+                    <DropdownItem label="Open documents..." hint="Switch between open notes" onPress={() => { setTabListOpen(true); setOpenMenu(null); }} />
                     <DropdownSeparator />
-                    <DropdownItem label="Delete" destructive onPress={() => { deleteActiveNote(); setOpenMenu(null); }} />
+                    <DropdownItem label="Duplicate doc" onPress={() => { duplicateActiveNote(); setOpenMenu(null); }} />
+                    <DropdownItem label="Rename..." onPress={() => { setRenameTarget({ id: activeNote.id, title: activeNote.title }); setOpenMenu(null); }} />
+                    <DropdownSeparator />
+                    <DropdownItem label="Close" hint="Close current document" onPress={() => { deleteNote(activeNote.id); setOpenMenu(null); }} />
+                    <DropdownItem label="Close others" onPress={() => { closeOthers(activeNote.id); setOpenMenu(null); }} />
+                    <DropdownSeparator />
+                    <DropdownItem label="Delete doc" destructive onPress={() => { deleteActiveNote(); setOpenMenu(null); }} />
                   </>
                 ) : null}
                 {openMenu === "edit" ? (
@@ -766,26 +772,38 @@ export default function NotepadScreen() {
                     <DropdownItem label="Wildcards (* ?)" checked={useWildcards} onPress={() => { setUseWildcards((c) => { const n = !c; if (n) setUseRegex(false); return n; }); setOpenMenu(null); }} />
                     <DropdownItem label="Regular expression" checked={useRegex} onPress={() => { setUseRegex((c) => { const n = !c; if (n) setUseWildcards(false); return n; }); setOpenMenu(null); }} />
                     <DropdownSeparator />
-                    <DropdownItem label="Insert timestamp" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setOpenMenu(null); }} />
+                    <DropdownItem label="Insert date" hint="Current timestamp" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setOpenMenu(null); }} />
                     <DropdownItem label="Duplicate line" onPress={() => { duplicateCurrentLine(); setOpenMenu(null); }} />
-                    <DropdownItem label="Cut line" onPress={() => { deleteCurrentLine(); setOpenMenu(null); }} />
+                    <DropdownItem label="Delete line" onPress={() => { deleteCurrentLine(); setOpenMenu(null); }} />
                     <DropdownItem label="Sort lines" onPress={() => { sortLines(); setOpenMenu(null); }} />
-                    <DropdownItem label="Trim trailing spaces" onPress={() => { trimTrailingSpaces(); setOpenMenu(null); }} />
+                    <DropdownItem label="Trim spaces" hint="Remove trailing whitespace" onPress={() => { trimTrailingSpaces(); setOpenMenu(null); }} />
                   </>
                 ) : null}
                 {openMenu === "view" ? (
                   <>
                     <DropdownItem label="Toolbar" checked={toolbarOpen} onPress={() => { setToolbarOpen((current) => !current); setOpenMenu(null); }} />
-                    <DropdownItem label="Compare documents" checked={compareOpen} onPress={() => { toggleCompare(); setOpenMenu(null); }} />
-                    <DropdownItem label="Zen mode" checked={zenMode} onPress={() => { setZenMode((current) => !current); setOpenMenu(null); }} />
+                    <DropdownItem label="Hide toolbar" onPress={() => { setToolbarOpen(false); setOpenMenu(null); }} />
+                    <DropdownItem label="Show text under icons" checked={toolbarLabels} onPress={() => { setToolbarLabels(!toolbarLabels); setOpenMenu(null); }} />
+                    <DropdownItem label="Two-row toolbar" checked={toolbarRows === "double"} onPress={() => { setToolbarRows(toolbarRows === "double" ? "single" : "double"); setOpenMenu(null); }} />
                     <DropdownSeparator />
-                    <DropdownItem label="Simulated mouse" hint="On-screen pointer" checked={mouseOn} onPress={() => { setMouseOn((current) => !current); setOpenMenu(null); }} />
+                    <DropdownItem label="Document tabs" checked={tabsLayout === "tabs"} onPress={() => { setTabsLayout("tabs"); setOpenMenu(null); }} />
+                    <DropdownItem label="Document list" checked={tabsLayout === "list"} onPress={() => { setTabsLayout("list"); setOpenMenu(null); }} />
+                    <DropdownSeparator />
+                    <DropdownItem label="Compare" checked={compareOpen} onPress={() => { toggleCompare(); setOpenMenu(null); }} />
+                    <DropdownItem label="Zen mode" checked={zenMode} onPress={() => { setZenMode((current) => !current); setOpenMenu(null); }} />
+                    <DropdownItem label="Trackpad" hint="On-screen pointer" checked={mouseOn} onPress={() => { setMouseOn((current) => !current); setOpenMenu(null); }} />
                   </>
                 ) : null}
                 {openMenu === "tools" ? (
                   <>
-                    <DropdownItem label="Preferences..." onPress={() => { setPrefsOpen(true); setOpenMenu(null); }} />
+                    <DropdownItem label="Insert date" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setOpenMenu(null); }} />
+                    <DropdownItem label="Duplicate line" onPress={() => { duplicateCurrentLine(); setOpenMenu(null); }} />
+                    <DropdownItem label="Delete line" onPress={() => { deleteCurrentLine(); setOpenMenu(null); }} />
+                    <DropdownItem label="Sort lines" onPress={() => { sortLines(); setOpenMenu(null); }} />
+                    <DropdownItem label="Trim spaces" onPress={() => { trimTrailingSpaces(); setOpenMenu(null); }} />
+                    <DropdownSeparator />
                     <DropdownItem label="Change syntax..." onPress={() => { setLangOpen(true); setOpenMenu(null); }} />
+                    <DropdownItem label="Preferences..." onPress={() => { setPrefsOpen(true); setOpenMenu(null); }} />
                   </>
                 ) : null}
                 {openMenu === "help" ? (
