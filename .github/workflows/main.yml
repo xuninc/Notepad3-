@@ -56,18 +56,51 @@ jobs:
           CI: "1"
         run: pnpm exec expo prebuild --platform ios --clean --no-install
 
+      - name: Setup Ruby + Bundler (CocoaPods pin)
+        if: hashFiles('artifacts/mobile/ios/Gemfile') != ''
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: artifacts/mobile/ios
+
       - name: Pod install
         working-directory: artifacts/mobile/ios
-        run: pod install --repo-update
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f Gemfile ]; then
+            echo "==> Using bundler-pinned CocoaPods"
+            bundle exec pod install
+          else
+            echo "==> Using system CocoaPods"
+            pod install
+          fi
 
       - name: Resolve scheme name
         id: scheme
         working-directory: artifacts/mobile/ios
         shell: bash
         run: |
-          SCHEME=$(xcodebuild -workspace *.xcworkspace -list -json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['workspace']['schemes'][0])")
-          echo "scheme=$SCHEME" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          SCHEME=$(xcodebuild -project *.xcodeproj -list -json | python3 -c "import sys,json; d=json.load(sys.stdin); schemes=d['project']['schemes']; assert schemes, 'no schemes'; print(schemes[0])")
+          if [ -z "$SCHEME" ]; then
+            echo "ERROR: could not resolve scheme"
+            xcodebuild -project *.xcodeproj -list || true
+            exit 1
+          fi
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
           echo "Selected scheme: $SCHEME"
+
+      - name: Show toolchain versions
+        working-directory: artifacts/mobile/ios
+        run: |
+          xcodebuild -version
+          which xcodebuild
+          ruby --version || true
+          pod --version || true
+          node --version
+          pnpm --version
 
       - name: Build (unsigned, device)
         working-directory: artifacts/mobile/ios
@@ -88,22 +121,33 @@ jobs:
             ENABLE_BITCODE=NO \
             build
           echo "==> build products:"
-          ls -la build/Build/Products || true
-          ls -la build/Build/Products/Release-iphoneos || true
+          ls -la build/Build/Products 2>/dev/null || true
+          ls -la build/Build/Products/Release-iphoneos 2>/dev/null || true
 
       - name: Package unsigned IPA
         working-directory: artifacts/mobile/ios
+        shell: bash
         run: |
           set -euo pipefail
           rm -rf Payload unsigned.ipa
           mkdir -p Payload
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -print -quit)
+          PRODUCTS_DIR="build/Build/Products/Release-iphoneos"
+          if [ ! -d "$PRODUCTS_DIR" ]; then
+            echo "ERROR: products directory not found at $PRODUCTS_DIR"
+            ls -la build/Build/Products 2>/dev/null || true
+            find build -maxdepth 5 -name "*.app" -print 2>/dev/null || true
+            exit 1
+          fi
+          APP_PATH="$(find "$PRODUCTS_DIR" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)"
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: no .app found in build products"
-            find build/Build/Products -maxdepth 4 -print
+            echo "ERROR: no .app found in $PRODUCTS_DIR"
+            ls -la "$PRODUCTS_DIR" || true
+            echo "==> searching elsewhere:"
+            find build -maxdepth 6 -name "*.app" -print 2>/dev/null || true
             exit 1
           fi
           echo "Found app: $APP_PATH"
+          du -sh "$APP_PATH" || true
           cp -R "$APP_PATH" Payload/
           zip -qry unsigned.ipa Payload
           ls -lh unsigned.ipa
