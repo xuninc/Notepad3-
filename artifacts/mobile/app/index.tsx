@@ -58,6 +58,40 @@ function getLineRange(body: string, index: number) {
   return { start, end };
 }
 
+function compareDocuments(left: NoteDocument, right?: NoteDocument) {
+  if (!right) {
+    return { rows: [], added: 0, removed: 0, changed: 0, same: 0 };
+  }
+  const leftLines = left.body.split("\n");
+  const rightLines = right.body.split("\n");
+  const total = Math.max(leftLines.length, rightLines.length);
+  const rows = Array.from({ length: total }, (_, index) => {
+    const leftText = leftLines[index];
+    const rightText = rightLines[index];
+    const status =
+      leftText === rightText
+        ? "same"
+        : leftText === undefined
+          ? "added"
+          : rightText === undefined
+            ? "removed"
+            : "changed";
+    return {
+      line: index + 1,
+      leftText: leftText ?? "",
+      rightText: rightText ?? "",
+      status,
+    };
+  });
+  return {
+    rows,
+    added: rows.filter((row) => row.status === "added").length,
+    removed: rows.filter((row) => row.status === "removed").length,
+    changed: rows.filter((row) => row.status === "changed").length,
+    same: rows.filter((row) => row.status === "same").length,
+  };
+}
+
 function IconButton({
   icon,
   onPress,
@@ -159,11 +193,16 @@ export default function PocketPadScreen() {
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replaceText, setReplaceText] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareId, setCompareId] = useState<string | null>(null);
   const [zenMode, setZenMode] = useState(false);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const stats = getStats(activeNote.body);
   const cursor = getCursorPosition(activeNote.body, selection.start);
   const selectedChars = Math.max(0, selection.end - selection.start);
+  const comparableNotes = notes.filter((note) => note.id !== activeId);
+  const compareNote = comparableNotes.find((note) => note.id === compareId) ?? comparableNotes[0];
+  const comparison = compareDocuments(activeNote, compareNote);
   const matches = getMatches(activeNote.body, findQuery, caseSensitive);
   const highlightedPreview = findQuery.trim()
     ? activeNote.body
@@ -252,6 +291,14 @@ export default function PocketPadScreen() {
                   setReplaceOpen((current) => !current);
                 }}
               />
+              <IconButton
+                icon="columns"
+                color={compareOpen ? colors.primary : colors.foreground}
+                onPress={() => {
+                  setCompareOpen((current) => !current);
+                  if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id);
+                }}
+              />
               <IconButton icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
               <IconButton icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
               <IconButton icon="plus" color={colors.primary} onPress={createNote} />
@@ -280,6 +327,15 @@ export default function PocketPadScreen() {
             <ToolChip icon="list" label="Sort" onPress={sortLines} />
             <ToolChip icon="align-left" label="Trim" onPress={trimTrailingSpaces} />
             <ToolChip icon="type" label="Case" onPress={() => setCaseSensitive((current) => !current)} active={caseSensitive} />
+            <ToolChip
+              icon="columns"
+              label="Compare"
+              active={compareOpen}
+              onPress={() => {
+                setCompareOpen((current) => !current);
+                if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id);
+              }}
+            />
           </ScrollView>
         ) : null}
 
@@ -370,6 +426,87 @@ export default function PocketPadScreen() {
                   </Pressable>
                 </View>
               ) : null}
+            </View>
+          ) : null}
+
+          {compareOpen && !zenMode ? (
+            <View style={[styles.comparePanel, { borderColor: colors.border }]}>
+              <View style={styles.compareHeader}>
+                <View style={styles.compareTitleWrap}>
+                  <Feather name="columns" size={17} color={colors.primary} />
+                  <Text style={[styles.compareTitle, { color: colors.foreground }]}>Compare with</Text>
+                </View>
+                <Text style={[styles.compareSummary, { color: colors.mutedForeground }]}>
+                  {comparison.changed} changed · {comparison.added} added · {comparison.removed} removed
+                </Text>
+              </View>
+              {comparableNotes.length === 0 ? (
+                <View style={[styles.compareEmpty, { backgroundColor: colors.muted }]}>
+                  <Text style={[styles.compareEmptyTitle, { color: colors.foreground }]}>Create or duplicate a document to compare.</Text>
+                  <Text style={[styles.compareEmptyText, { color: colors.mutedForeground }]}>Use the copy button to make a version, edit it, then compare the two files.</Text>
+                </View>
+              ) : (
+                <>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.compareSelector}>
+                    {comparableNotes.map((note) => {
+                      const selected = note.id === compareNote?.id;
+                      return (
+                        <Pressable
+                          key={note.id}
+                          onPress={() => {
+                            setCompareId(note.id);
+                            Haptics.selectionAsync();
+                          }}
+                          style={({ pressed }) => [
+                            styles.compareDocPill,
+                            {
+                              backgroundColor: selected ? colors.secondary : colors.muted,
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                          testID={`compare-${note.id}`}
+                        >
+                          <Text numberOfLines={1} style={[styles.compareDocText, { color: selected ? colors.secondaryForeground : colors.foreground }]}>
+                            {note.title}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <ScrollView style={styles.diffList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                    {comparison.rows
+                      .filter((row) => row.status !== "same")
+                      .slice(0, 40)
+                      .map((row) => {
+                        const tone =
+                          row.status === "added"
+                            ? colors.success
+                            : row.status === "removed"
+                              ? colors.destructive
+                              : colors.accent;
+                        return (
+                          <View key={`${row.line}-${row.status}`} style={[styles.diffRow, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+                            <Text style={[styles.diffLineNumber, { color: tone }]}>L{row.line}</Text>
+                            <View style={styles.diffColumns}>
+                              <Text numberOfLines={2} style={[styles.diffText, { color: colors.foreground }]}>
+                                {row.leftText || "∅"}
+                              </Text>
+                              <Text numberOfLines={2} style={[styles.diffText, { color: colors.foreground }]}>
+                                {row.rightText || "∅"}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    {comparison.rows.some((row) => row.status !== "same") ? null : (
+                      <View style={[styles.compareEmpty, { backgroundColor: colors.muted }]}>
+                        <Text style={[styles.compareEmptyTitle, { color: colors.foreground }]}>No differences found.</Text>
+                        <Text style={[styles.compareEmptyText, { color: colors.mutedForeground }]}>These two documents match line-for-line.</Text>
+                      </View>
+                    )}
+                  </ScrollView>
+                </>
+              )}
             </View>
           ) : null}
 
@@ -632,6 +769,84 @@ const styles = StyleSheet.create({
   matchLine: {
     fontFamily: "Inter_500Medium",
     fontSize: 12,
+  },
+  comparePanel: {
+    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 9,
+    maxHeight: 250,
+  },
+  compareHeader: {
+    gap: 4,
+  },
+  compareTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  compareTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+  },
+  compareSummary: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+  },
+  compareSelector: {
+    gap: 8,
+    paddingRight: 12,
+  },
+  compareDocPill: {
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    maxWidth: 140,
+  },
+  compareDocText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 12,
+  },
+  compareEmpty: {
+    borderRadius: 14,
+    padding: 12,
+    gap: 3,
+  },
+  compareEmptyTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+  },
+  compareEmptyText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  diffList: {
+    maxHeight: 118,
+  },
+  diffRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 6,
+    flexDirection: "row",
+    gap: 8,
+  },
+  diffLineNumber: {
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    fontSize: 12,
+    minWidth: 30,
+  },
+  diffColumns: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 8,
+  },
+  diffText: {
+    flex: 1,
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    fontSize: 12,
+    lineHeight: 16,
   },
   statusBar: {
     borderTopWidth: 1,
