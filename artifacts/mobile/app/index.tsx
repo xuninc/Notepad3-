@@ -5,12 +5,14 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TextInputSelectionChangeEventData,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,9 +31,31 @@ function getStats(body: string) {
   return { lines, words, chars: body.length };
 }
 
-function getMatches(body: string, query: string) {
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getMatches(body: string, query: string, caseSensitive: boolean) {
   if (!query.trim()) return 0;
-  return body.toLowerCase().split(query.trim().toLowerCase()).length - 1;
+  const haystack = caseSensitive ? body : body.toLowerCase();
+  const needle = caseSensitive ? query.trim() : query.trim().toLowerCase();
+  return haystack.split(needle).length - 1;
+}
+
+function getCursorPosition(body: string, index: number) {
+  const before = body.slice(0, index);
+  const lines = before.split("\n");
+  return {
+    line: lines.length,
+    column: (lines[lines.length - 1]?.length ?? 0) + 1,
+  };
+}
+
+function getLineRange(body: string, index: number) {
+  const start = body.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const rawEnd = body.indexOf("\n", index);
+  const end = rawEnd === -1 ? body.length : rawEnd;
+  return { start, end };
 }
 
 function IconButton({
@@ -81,6 +105,37 @@ function DocumentTab({ item, active }: { item: NoteDocument; active: boolean }) 
   );
 }
 
+function ToolChip({
+  icon,
+  label,
+  onPress,
+  active,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  onPress: () => void;
+  active?: boolean;
+}) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.toolChip,
+        {
+          backgroundColor: active ? colors.secondary : colors.card,
+          borderColor: active ? colors.secondary : colors.border,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+      testID={`tool-${label}`}
+    >
+      <Feather name={icon} size={14} color={active ? colors.secondaryForeground : colors.primary} />
+      <Text style={[styles.toolChipText, { color: active ? colors.secondaryForeground : colors.foreground }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function EditorGutter({ lineCount }: { lineCount: number }) {
   const colors = useColors();
   const lines = useMemo(() => Array.from({ length: Math.max(lineCount, 1) }, (_, index) => index + 1), [lineCount]);
@@ -101,16 +156,74 @@ export default function PocketPadScreen() {
   const { notes, activeNote, activeId, isLoaded, createNote, updateActiveNote, deleteActiveNote, duplicateActiveNote } = useNotes();
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replaceText, setReplaceText] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
   const [zenMode, setZenMode] = useState(false);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
   const stats = getStats(activeNote.body);
-  const matches = getMatches(activeNote.body, findQuery);
+  const cursor = getCursorPosition(activeNote.body, selection.start);
+  const selectedChars = Math.max(0, selection.end - selection.start);
+  const matches = getMatches(activeNote.body, findQuery, caseSensitive);
   const highlightedPreview = findQuery.trim()
     ? activeNote.body
         .split("\n")
         .map((line, index) => ({ line, index: index + 1 }))
-        .filter(({ line }) => line.toLowerCase().includes(findQuery.trim().toLowerCase()))
+        .filter(({ line }) => {
+          const haystack = caseSensitive ? line : line.toLowerCase();
+          const needle = caseSensitive ? findQuery.trim() : findQuery.trim().toLowerCase();
+          return haystack.includes(needle);
+        })
         .slice(0, 3)
     : [];
+
+  const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    setSelection(event.nativeEvent.selection);
+  };
+
+  const insertTextAtSelection = (value: string) => {
+    const nextBody = `${activeNote.body.slice(0, selection.start)}${value}${activeNote.body.slice(selection.end)}`;
+    updateActiveNote({ body: nextBody });
+    const nextIndex = selection.start + value.length;
+    setSelection({ start: nextIndex, end: nextIndex });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const replaceAll = () => {
+    if (!findQuery.trim()) return;
+    const nextBody = caseSensitive
+      ? activeNote.body.split(findQuery.trim()).join(replaceText)
+      : activeNote.body.replace(new RegExp(escapeRegExp(findQuery.trim()), "gi"), replaceText);
+    updateActiveNote({ body: nextBody });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const duplicateCurrentLine = () => {
+    const range = getLineRange(activeNote.body, selection.start);
+    const line = activeNote.body.slice(range.start, range.end);
+    const insertion = range.end === activeNote.body.length ? `\n${line}` : `\n${line}`;
+    const nextBody = `${activeNote.body.slice(0, range.end)}${insertion}${activeNote.body.slice(range.end)}`;
+    updateActiveNote({ body: nextBody });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const deleteCurrentLine = () => {
+    const range = getLineRange(activeNote.body, selection.start);
+    const removeEnd = activeNote.body[range.end] === "\n" ? range.end + 1 : range.end;
+    const nextBody = `${activeNote.body.slice(0, range.start)}${activeNote.body.slice(removeEnd)}`;
+    updateActiveNote({ body: nextBody });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  };
+
+  const sortLines = () => {
+    updateActiveNote({ body: activeNote.body.split("\n").sort((a, b) => a.localeCompare(b)).join("\n") });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const trimTrailingSpaces = () => {
+    updateActiveNote({ body: activeNote.body.split("\n").map((line) => line.replace(/[ \t]+$/g, "")).join("\n") });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
 
   if (!isLoaded) {
     return (
@@ -131,6 +244,14 @@ export default function PocketPadScreen() {
             </View>
             <View style={styles.actions}>
               <IconButton icon="search" color={colors.foreground} onPress={() => setFindOpen((current) => !current)} />
+              <IconButton
+                icon="repeat"
+                color={replaceOpen ? colors.primary : colors.foreground}
+                onPress={() => {
+                  setFindOpen(true);
+                  setReplaceOpen((current) => !current);
+                }}
+              />
               <IconButton icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
               <IconButton icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
               <IconButton icon="plus" color={colors.primary} onPress={createNote} />
@@ -149,6 +270,17 @@ export default function PocketPadScreen() {
             contentContainerStyle={styles.tabsList}
             scrollEnabled={notes.length > 0}
           />
+        ) : null}
+
+        {!zenMode ? (
+          <ScrollView horizontal style={styles.toolRailScroller} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRail}>
+            <ToolChip icon="clock" label="Stamp" onPress={() => insertTextAtSelection(new Date().toLocaleString())} />
+            <ToolChip icon="copy" label="Dup line" onPress={duplicateCurrentLine} />
+            <ToolChip icon="scissors" label="Cut line" onPress={deleteCurrentLine} />
+            <ToolChip icon="list" label="Sort" onPress={sortLines} />
+            <ToolChip icon="align-left" label="Trim" onPress={trimTrailingSpaces} />
+            <ToolChip icon="type" label="Case" onPress={() => setCaseSensitive((current) => !current)} active={caseSensitive} />
+          </ScrollView>
         ) : null}
 
         <View style={[styles.editorShell, { backgroundColor: colors.editorBackground, borderColor: colors.border, shadowColor: colors.foreground }]}>
@@ -189,18 +321,55 @@ export default function PocketPadScreen() {
           </View>
 
           {findOpen && !zenMode ? (
-            <View style={[styles.findBar, { borderColor: colors.border }]}>
-              <Feather name="search" size={17} color={colors.mutedForeground} />
-              <TextInput
-                value={findQuery}
-                onChangeText={setFindQuery}
-                style={[styles.findInput, { color: colors.foreground }]}
-                placeholder="Find in document"
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                testID="find-input"
-              />
-              <Text style={[styles.findCount, { color: colors.mutedForeground }]}>{matches} matches</Text>
+            <View style={[styles.findPanel, { borderColor: colors.border }]}>
+              <View style={styles.findBar}>
+                <Feather name="search" size={17} color={colors.mutedForeground} />
+                <TextInput
+                  value={findQuery}
+                  onChangeText={setFindQuery}
+                  style={[styles.findInput, { color: colors.foreground }]}
+                  placeholder="Find in document"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoCapitalize="none"
+                  testID="find-input"
+                />
+                <Pressable
+                  onPress={() => setCaseSensitive((current) => !current)}
+                  style={[styles.caseToggle, { backgroundColor: caseSensitive ? colors.primary : colors.muted }]}
+                  testID="case-toggle"
+                >
+                  <Text style={[styles.caseToggleText, { color: caseSensitive ? colors.primaryForeground : colors.mutedForeground }]}>Aa</Text>
+                </Pressable>
+                <Text style={[styles.findCount, { color: colors.mutedForeground }]}>{matches}</Text>
+              </View>
+              {replaceOpen ? (
+                <View style={styles.findBar}>
+                  <Feather name="repeat" size={17} color={colors.mutedForeground} />
+                  <TextInput
+                    value={replaceText}
+                    onChangeText={setReplaceText}
+                    style={[styles.findInput, { color: colors.foreground }]}
+                    placeholder="Replace with"
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                    testID="replace-input"
+                  />
+                  <Pressable
+                    onPress={replaceAll}
+                    disabled={!findQuery.trim()}
+                    style={({ pressed }) => [
+                      styles.replaceButton,
+                      {
+                        backgroundColor: colors.secondary,
+                        opacity: !findQuery.trim() ? 0.35 : pressed ? 0.7 : 1,
+                      },
+                    ]}
+                    testID="replace-all"
+                  >
+                    <Text style={[styles.replaceButtonText, { color: colors.secondaryForeground }]}>All</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -223,6 +392,8 @@ export default function PocketPadScreen() {
                 style={[styles.editorInput, { color: colors.foreground }]}
                 placeholder="Start typing..."
                 placeholderTextColor={colors.mutedForeground}
+                selection={selection}
+                onSelectionChange={handleSelectionChange}
                 testID="editor-input"
               />
             </View>
@@ -242,6 +413,8 @@ export default function PocketPadScreen() {
             <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{stats.lines} lines</Text>
             <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{stats.words} words</Text>
             <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{stats.chars} chars</Text>
+            <Text style={[styles.statusText, { color: colors.mutedForeground }]}>Ln {cursor.line}, Col {cursor.column}</Text>
+            {selectedChars > 0 ? <Text style={[styles.statusText, { color: colors.accent }]}>{selectedChars} selected</Text> : null}
             <Text style={[styles.statusText, { color: colors.success }]}>autosaved {formatTime(activeNote.updatedAt)}</Text>
           </View>
         </View>
@@ -300,6 +473,27 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     maxHeight: 66,
   },
+  toolRailScroller: {
+    flexGrow: 0,
+    maxHeight: 42,
+  },
+  toolRail: {
+    gap: 8,
+    paddingRight: 12,
+  },
+  toolChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  toolChipText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 12,
+  },
   documentTab: {
     width: 128,
     borderWidth: 1,
@@ -357,13 +551,17 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     fontSize: 11,
   },
-  findBar: {
-    minHeight: 48,
+  findPanel: {
     borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 7,
+  },
+  findBar: {
+    minHeight: 36,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 14,
   },
   findInput: {
     flex: 1,
@@ -373,6 +571,26 @@ const styles = StyleSheet.create({
   },
   findCount: {
     fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    minWidth: 22,
+    textAlign: "right",
+  },
+  caseToggle: {
+    borderRadius: 9,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  caseToggleText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
+  },
+  replaceButton: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  replaceButtonText: {
+    fontFamily: "Inter_700Bold",
     fontSize: 12,
   },
   editorScroll: {
