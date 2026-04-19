@@ -27,7 +27,7 @@ type ThemeContextValue = {
 };
 
 const STORAGE_KEY = "notepad3pp.themePreference";
-const TABS_KEY = "notepad3pp.tabsLayout";
+const TABS_KEY = "notepad3pp.tabsLayout.v2";
 const LABELS_KEY = "notepad3pp.toolbarLabels";
 const ROWS_KEY = "notepad3pp.toolbarRows";
 
