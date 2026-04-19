@@ -80,12 +80,17 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -archivePath "$PWD/build/app.xcarchive" \
-            CODE_SIGNING_ALLOWED=NO \
+                        CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
             DEVELOPMENT_TEAM="" \
-            archive | xcpretty || true
-          test -d "$PWD/build/app.xcarchive"
+            ENABLE_BITCODE=NO \
+            archive
+          echo "==> archive contents:"
+          ls -la build/app.xcarchive || true
+          ls -la build/app.xcarchive/Products || true
+          ls -la build/app.xcarchive/Products/Applications || true
 
       - name: Package unsigned IPA
         working-directory: artifacts/mobile/ios
@@ -93,13 +98,4 @@ jobs:
           set -euo pipefail
           rm -rf Payload unsigned.ipa
           mkdir -p Payload
-          cp -R build/app.xcarchive/Products/Applications/*.app Payload/
-          zip -qry unsigned.ipa Payload
-          ls -lh unsigned.ipa
-
-      - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: notepad3pp-unsigned-ipa
-          path: artifacts/mobile/ios/unsigned.ipa
-          if-no-files-found: error
+          APP_PATH=$(find build/app.xcarchive/Products/Applications -maxdepth 1 -name "*.app" -print -quit)
