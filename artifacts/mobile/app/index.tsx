@@ -1,7 +1,6 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -157,9 +156,10 @@ function SyntaxLine({ line, language, muted }: { line: string; language: NoteLan
 }
 
 function IconButton({ icon, onPress, color, disabled }: { icon: keyof typeof Feather.glyphMap; onPress: () => void; color: string; disabled?: boolean }) {
+  const colors = useColors();
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.iconButton, { opacity: disabled ? 0.35 : pressed ? 0.55 : 1 }]} testID={`button-${icon}`}>
-      <Feather name={icon} size={21} color={color} />
+    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.iconButton, { backgroundColor: pressed ? colors.secondary : "transparent", opacity: disabled ? 0.35 : 1 }]} testID={`button-${icon}`}>
+      <Feather name={icon} size={16} color={color} />
     </Pressable>
   );
 }
@@ -168,9 +168,8 @@ function DocumentTab({ item, active }: { item: NoteDocument; active: boolean }) 
   const colors = useColors();
   const { setActiveId } = useNotes();
   return (
-    <Pressable onPress={() => setActiveId(item.id)} style={({ pressed }) => [styles.documentTab, { backgroundColor: active ? colors.secondary : colors.card, borderColor: active ? colors.secondary : colors.border, opacity: pressed ? 0.72 : 1 }]} testID={`note-tab-${item.id}`}>
-      <Text numberOfLines={1} style={[styles.documentTabTitle, { color: active ? colors.secondaryForeground : colors.foreground }]}>{item.title}</Text>
-      <Text style={[styles.documentTabMeta, { color: active ? colors.secondaryForeground : colors.mutedForeground }]}>{getStats(item.body).lines} lines</Text>
+    <Pressable onPress={() => setActiveId(item.id)} style={({ pressed }) => [styles.documentTab, { backgroundColor: active ? colors.editorBackground : colors.background, borderColor: colors.border, borderBottomColor: active ? colors.editorBackground : colors.border, opacity: pressed ? 0.85 : 1 }]} testID={`note-tab-${item.id}`}>
+      <Text numberOfLines={1} style={[styles.documentTabTitle, { color: colors.foreground, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium" }]}>{item.title}</Text>
     </Pressable>
   );
 }
@@ -178,9 +177,9 @@ function DocumentTab({ item, active }: { item: NoteDocument; active: boolean }) 
 function ToolChip({ icon, label, onPress, active }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; active?: boolean }) {
   const colors = useColors();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.toolChip, { backgroundColor: active ? colors.secondary : colors.card, borderColor: active ? colors.secondary : colors.border, opacity: pressed ? 0.7 : 1 }]} testID={`tool-${label}`}>
-      <Feather name={icon} size={14} color={active ? colors.secondaryForeground : colors.primary} />
-      <Text style={[styles.toolChipText, { color: active ? colors.secondaryForeground : colors.foreground }]}>{label}</Text>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.toolChip, { backgroundColor: active ? colors.secondary : colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]} testID={`tool-${label}`}>
+      <Feather name={icon} size={12} color={colors.foreground} />
+      <Text style={[styles.toolChipText, { color: colors.foreground }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -347,58 +346,57 @@ export default function PocketPadScreen() {
   }
 
   return (
-    <LinearGradient colors={[colors.background, colors.card]} style={styles.screen}>
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 10, paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 10 }]}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top, paddingBottom: Platform.OS === "web" ? 34 : insets.bottom }]}>
         {!zenMode ? (
-          <View style={styles.topBar}>
-            <View>
-              <Text style={[styles.kicker, { color: colors.primary }]}>PocketPad++</Text>
-              <Text style={[styles.title, { color: colors.foreground }]}>Notepad2 shell, ++ tools</Text>
-            </View>
-            <View style={styles.actions}>
-              <IconButton icon="upload" color={colors.foreground} onPress={importFromFiles} />
-              <IconButton icon="search" color={colors.foreground} onPress={() => setFindOpen((current) => !current)} />
-              <IconButton icon="repeat" color={replaceOpen ? colors.primary : colors.foreground} onPress={() => { setFindOpen(true); setReplaceOpen((current) => !current); }} />
-              <IconButton icon="columns" color={compareOpen ? colors.primary : colors.foreground} onPress={() => { setCompareOpen((current) => !current); if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id); }} />
-              <IconButton icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
-              <IconButton icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
-              <IconButton icon="plus" color={colors.primary} onPress={createNote} />
-            </View>
+          <View style={[styles.titleBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="document-text-outline" size={13} color={colors.foreground} />
+            <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.foreground }]}>{activeNote.title} - PocketPad++</Text>
           </View>
         ) : null}
 
         {!zenMode ? (
-          <FlatList horizontal data={notes} keyExtractor={(item) => item.id} renderItem={({ item }) => <DocumentTab item={item} active={item.id === activeId} />} style={styles.tabsScroller} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsList} scrollEnabled={notes.length > 0} />
+          <View style={[styles.toolbar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <IconButton icon="file-plus" color={colors.foreground} onPress={createNote} />
+            <IconButton icon="folder" color={colors.foreground} onPress={importFromFiles} />
+            <IconButton icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
+            <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+            <IconButton icon="search" color={colors.foreground} onPress={() => setFindOpen((current) => !current)} />
+            <IconButton icon="repeat" color={replaceOpen ? colors.primary : colors.foreground} onPress={() => { setFindOpen(true); setReplaceOpen((current) => !current); }} />
+            <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+            <IconButton icon="columns" color={compareOpen ? colors.primary : colors.foreground} onPress={() => { setCompareOpen((current) => !current); if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id); }} />
+            <IconButton icon={zenMode ? "minimize-2" : "maximize-2"} color={colors.foreground} onPress={() => setZenMode((current) => !current)} />
+            <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+            <IconButton icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
+          </View>
         ) : null}
 
         {!zenMode ? (
-          <ScrollView horizontal style={styles.toolRailScroller} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRail}>
-            <ToolChip icon="upload" label="Files" onPress={importFromFiles} />
+          <FlatList horizontal data={notes} keyExtractor={(item) => item.id} renderItem={({ item }) => <DocumentTab item={item} active={item.id === activeId} />} style={[styles.tabsScroller, { backgroundColor: colors.background, borderColor: colors.border }]} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsList} scrollEnabled={notes.length > 0} />
+        ) : null}
+
+        {!zenMode ? (
+          <ScrollView horizontal style={[styles.toolRailScroller, { backgroundColor: colors.card, borderColor: colors.border }]} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRail}>
             <ToolChip icon="clock" label="Stamp" onPress={() => insertTextAtSelection(new Date().toLocaleString())} />
             <ToolChip icon="copy" label="Dup line" onPress={duplicateCurrentLine} />
             <ToolChip icon="scissors" label="Cut line" onPress={deleteCurrentLine} />
             <ToolChip icon="list" label="Sort" onPress={sortLines} />
             <ToolChip icon="align-left" label="Trim" onPress={trimTrailingSpaces} />
             <ToolChip icon="type" label="Case" onPress={() => setCaseSensitive((current) => !current)} active={caseSensitive} />
-            <ToolChip icon="columns" label="Compare" active={compareOpen} onPress={() => { setCompareOpen((current) => !current); if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id); }} />
           </ScrollView>
         ) : null}
 
-        {importError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{importError}</Text> : null}
+        {importError ? <Text style={[styles.errorText, { color: colors.destructive, backgroundColor: colors.card }]}>{importError}</Text> : null}
 
-        <View style={[styles.editorShell, { backgroundColor: colors.editorBackground, borderColor: colors.border, shadowColor: colors.foreground }]}>
-          <View style={[styles.fileHeader, { borderColor: colors.border }]}>
-            <View style={styles.fileTitleWrap}>
-              <Ionicons name="document-text-outline" size={20} color={colors.primary} />
-              <TextInput value={activeNote.title} onChangeText={(title) => updateActiveNote({ title })} style={[styles.fileTitleInput, { color: colors.foreground }]} placeholder="filename.txt" placeholderTextColor={colors.mutedForeground} testID="filename-input" />
-            </View>
+        <View style={[styles.editorShell, { backgroundColor: colors.editorBackground, borderColor: colors.border }]}>
+          <View style={[styles.fileHeader, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <TextInput value={activeNote.title} onChangeText={(title) => updateActiveNote({ title })} style={[styles.fileTitleInput, { color: colors.foreground }]} placeholder="filename.txt" placeholderTextColor={colors.mutedForeground} testID="filename-input" />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.languageRail}>
               {languages.map((language) => (
-                <Pressable key={language} onPress={() => { Haptics.selectionAsync(); updateActiveNote({ language }); }} style={({ pressed }) => [styles.languagePill, { backgroundColor: activeNote.language === language ? colors.primary : colors.muted, opacity: pressed ? 0.7 : 1 }]} testID={`language-${language}`}>
-                  <Text style={[styles.languageText, { color: activeNote.language === language ? colors.primaryForeground : colors.mutedForeground }]}>{language}</Text>
+                <Pressable key={language} onPress={() => { Haptics.selectionAsync(); updateActiveNote({ language }); }} style={({ pressed }) => [styles.languagePill, { backgroundColor: activeNote.language === language ? colors.primary : "transparent", borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]} testID={`language-${language}`}>
+                  <Text style={[styles.languageText, { color: activeNote.language === language ? colors.primaryForeground : colors.foreground }]}>{language}</Text>
                 </Pressable>
               ))}
-              <IconButton icon={zenMode ? "minimize-2" : "maximize-2"} color={colors.accent} onPress={() => setZenMode((current) => !current)} />
             </ScrollView>
           </View>
 
@@ -471,17 +469,29 @@ export default function PocketPadScreen() {
             </View>
           ) : null}
 
-          <View style={[styles.statusBar, { borderColor: colors.border }]}> 
-            <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{stats.lines} lines</Text>
-            <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{stats.words} words</Text>
-            <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{stats.chars} chars</Text>
-            <Text style={[styles.statusText, { color: colors.mutedForeground }]}>Ln {cursor.line}, Col {cursor.column}</Text>
-            {selectedChars > 0 ? <Text style={[styles.statusText, { color: colors.accent }]}>{selectedChars} selected</Text> : null}
-            <Text style={[styles.statusText, { color: colors.success }]}>autosaved {formatTime(activeNote.updatedAt)}</Text>
-          </View>
+        </View>
+
+        <View style={[styles.statusBar, { borderColor: colors.border, backgroundColor: colors.card }]}> 
+          <Text style={[styles.statusText, { color: colors.foreground }]}>Ln {cursor.line}, Col {cursor.column}</Text>
+          <View style={[styles.statusSep, { backgroundColor: colors.border }]} />
+          <Text style={[styles.statusText, { color: colors.foreground }]}>{stats.lines}L  {stats.words}W  {stats.chars}C</Text>
+          {selectedChars > 0 ? (
+            <>
+              <View style={[styles.statusSep, { backgroundColor: colors.border }]} />
+              <Text style={[styles.statusText, { color: colors.accent }]}>Sel {selectedChars}</Text>
+            </>
+          ) : null}
+          <View style={[styles.statusSep, { backgroundColor: colors.border }]} />
+          <Text style={[styles.statusText, { color: colors.foreground }]}>{activeNote.language}</Text>
+          <View style={[styles.statusSep, { backgroundColor: colors.border }]} />
+          <Text style={[styles.statusText, { color: colors.foreground }]}>UTF-8</Text>
+          <View style={[styles.statusSep, { backgroundColor: colors.border }]} />
+          <Text style={[styles.statusText, { color: colors.foreground }]}>CRLF</Text>
+          <View style={styles.statusSpacer} />
+          <Text style={[styles.statusText, { color: colors.success }]}>saved {formatTime(activeNote.updatedAt)}</Text>
         </View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -489,68 +499,69 @@ const mono = Platform.select({ ios: "Menlo", android: "monospace", default: "mon
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 16, gap: 10 },
+  container: { flex: 1 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  kicker: { fontFamily: "Inter_700Bold", fontSize: 12, letterSpacing: 1.4, textTransform: "uppercase" },
-  title: { fontFamily: "Inter_700Bold", fontSize: 23, letterSpacing: -0.7 },
-  actions: { flexDirection: "row", alignItems: "center", gap: 1 },
-  iconButton: { alignItems: "center", justifyContent: "center", minHeight: 36, minWidth: 31 },
-  tabsList: { gap: 8, paddingRight: 12 },
-  tabsScroller: { flexGrow: 0, maxHeight: 62 },
-  toolRailScroller: { flexGrow: 0, maxHeight: 42 },
-  toolRail: { gap: 8, paddingRight: 12 },
-  toolChip: { borderWidth: 1, borderRadius: 5, paddingHorizontal: 11, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 },
-  toolChipText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  documentTab: { width: 128, borderWidth: 1, borderRadius: 5, paddingHorizontal: 12, paddingVertical: 9, gap: 3 },
-  documentTabTitle: { fontFamily: "Inter_700Bold", fontSize: 13 },
-  documentTabMeta: { fontFamily: "Inter_500Medium", fontSize: 11 },
-  errorText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  editorShell: { flex: 1, borderWidth: 1, borderRadius: 7, overflow: "hidden", shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 3 },
-  fileHeader: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  fileTitleWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
-  fileTitleInput: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 18, paddingVertical: 0 },
-  languageRail: { flexDirection: "row", alignItems: "center", gap: 6, paddingRight: 8 },
-  languagePill: { borderRadius: 4, paddingHorizontal: 9, paddingVertical: 6 },
-  languageText: { fontFamily: "Inter_700Bold", fontSize: 11 },
-  findPanel: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 8, gap: 7 },
-  findBar: { minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8 },
-  findInput: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 15, paddingVertical: 8 },
-  findCount: { fontFamily: "Inter_600SemiBold", fontSize: 12, minWidth: 22, textAlign: "right" },
-  caseToggle: { borderRadius: 4, paddingHorizontal: 8, paddingVertical: 5 },
-  caseToggleText: { fontFamily: "Inter_700Bold", fontSize: 11 },
-  replaceButton: { borderRadius: 4, paddingHorizontal: 12, paddingVertical: 7 },
-  replaceButtonText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  titleBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 4, borderBottomWidth: 1 },
+  titleBarText: { fontFamily: "Inter_500Medium", fontSize: 12, flex: 1 },
+  toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 2, borderBottomWidth: 1, gap: 1 },
+  toolbarSep: { width: 1, height: 18, marginHorizontal: 3 },
+  iconButton: { alignItems: "center", justifyContent: "center", minHeight: 26, minWidth: 26, paddingHorizontal: 4, borderRadius: 2 },
+  tabsList: { paddingHorizontal: 4 },
+  tabsScroller: { flexGrow: 0, maxHeight: 28, borderBottomWidth: 1 },
+  toolRailScroller: { flexGrow: 0, maxHeight: 30, borderBottomWidth: 1 },
+  toolRail: { gap: 4, paddingHorizontal: 4, paddingVertical: 3, alignItems: "center" },
+  toolChip: { borderWidth: 1, borderRadius: 2, paddingHorizontal: 6, paddingVertical: 3, flexDirection: "row", alignItems: "center", gap: 4 },
+  toolChipText: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  documentTab: { maxWidth: 160, borderWidth: 1, borderTopLeftRadius: 2, borderTopRightRadius: 2, paddingHorizontal: 10, paddingVertical: 4, marginRight: 2, marginTop: 2, justifyContent: "center" },
+  documentTabTitle: { fontSize: 11 },
+  errorText: { fontFamily: "Inter_500Medium", fontSize: 11, paddingHorizontal: 8, paddingVertical: 4 },
+  editorShell: { flex: 1, borderTopWidth: 1, borderBottomWidth: 1, overflow: "hidden" },
+  fileHeader: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 4, flexDirection: "row", alignItems: "center" },
+  fileTitleWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
+  fileTitleInput: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 12, paddingVertical: 0 },
+  languageRail: { flexDirection: "row", alignItems: "center", gap: 3, paddingRight: 4 },
+  languagePill: { borderRadius: 2, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 },
+  languageText: { fontFamily: "Inter_500Medium", fontSize: 10 },
+  findPanel: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 4 },
+  findBar: { minHeight: 28, flexDirection: "row", alignItems: "center", gap: 6 },
+  findInput: { flex: 1, fontFamily: mono, fontSize: 12, paddingVertical: 4, paddingHorizontal: 4, borderWidth: 1, borderRadius: 2 },
+  findCount: { fontFamily: mono, fontSize: 11, minWidth: 22, textAlign: "right" },
+  caseToggle: { borderRadius: 2, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1 },
+  caseToggleText: { fontFamily: "Inter_700Bold", fontSize: 10 },
+  replaceButton: { borderRadius: 2, paddingHorizontal: 8, paddingVertical: 4 },
+  replaceButtonText: { fontFamily: "Inter_500Medium", fontSize: 11 },
   editorScroll: { flex: 1 },
   editorScrollContent: { minHeight: "100%" },
   editorRow: { flexDirection: "row", minHeight: 360 },
-  gutter: { borderRightWidth: 1, paddingHorizontal: 8, paddingTop: 14, alignItems: "flex-end", minWidth: 46 },
-  gutterText: { fontFamily: mono, fontSize: 14, lineHeight: 24 },
-  editorInput: { flex: 1, minHeight: 360, padding: 14, fontFamily: mono, fontSize: 15, lineHeight: 24 },
-  syntaxPreview: { margin: 10, borderWidth: 1, borderRadius: 5, padding: 10, gap: 3 },
-  syntaxTitle: { fontFamily: "Inter_700Bold", fontSize: 12, marginBottom: 4 },
-  syntaxPreviewLine: { flexDirection: "row", gap: 8 },
-  syntaxLineNumber: { fontFamily: mono, minWidth: 28, textAlign: "right", fontSize: 12, lineHeight: 18 },
-  syntaxLine: { fontFamily: mono, fontSize: 12, lineHeight: 18 },
-  matchesPanel: { borderTopWidth: 1, paddingHorizontal: 14, paddingVertical: 9, gap: 4 },
-  matchLine: { fontFamily: "Inter_500Medium", fontSize: 12 },
-  compareWorkspace: { flex: 1, gap: 0 },
-  compareToolbar: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 8, gap: 7 },
-  compareSummary: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  compareSelector: { gap: 8, paddingRight: 12 },
-  compareDocPill: { borderRadius: 4, paddingHorizontal: 10, paddingVertical: 7, maxWidth: 145 },
-  compareDocText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  gutter: { borderRightWidth: 1, paddingHorizontal: 6, paddingTop: 8, alignItems: "flex-end", minWidth: 40 },
+  gutterText: { fontFamily: mono, fontSize: 12, lineHeight: 18 },
+  editorInput: { flex: 1, minHeight: 360, padding: 8, fontFamily: mono, fontSize: 13, lineHeight: 18 },
+  syntaxPreview: { marginHorizontal: 0, marginTop: 0, borderTopWidth: 1, padding: 8, gap: 0 },
+  syntaxTitle: { fontFamily: "Inter_500Medium", fontSize: 10, marginBottom: 4, opacity: 0.7 },
+  syntaxPreviewLine: { flexDirection: "row", gap: 6 },
+  syntaxLineNumber: { fontFamily: mono, minWidth: 24, textAlign: "right", fontSize: 11, lineHeight: 16 },
+  syntaxLine: { fontFamily: mono, fontSize: 11, lineHeight: 16 },
+  matchesPanel: { borderTopWidth: 1, paddingHorizontal: 8, paddingVertical: 4, gap: 2 },
+  matchLine: { fontFamily: mono, fontSize: 11 },
+  compareWorkspace: { flex: 1 },
+  compareToolbar: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 4 },
+  compareSummary: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  compareSelector: { gap: 4, paddingRight: 4 },
+  compareDocPill: { borderRadius: 2, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 3, maxWidth: 145 },
+  compareDocText: { fontFamily: "Inter_500Medium", fontSize: 11 },
   comparePane: { flex: 1, borderBottomWidth: 1 },
-  comparePaneHeader: { borderBottomWidth: 1, paddingHorizontal: 10, paddingVertical: 6 },
-  comparePaneTitle: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  comparePaneHeader: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 3 },
+  comparePaneTitle: { fontFamily: "Inter_500Medium", fontSize: 11 },
   compareScroll: { flex: 1 },
-  compareLine: { flexDirection: "row", alignItems: "flex-start", minHeight: 24, borderBottomWidth: StyleSheet.hairlineWidth },
-  compareMarker: { fontFamily: mono, width: 18, textAlign: "center", fontSize: 12, lineHeight: 22 },
-  compareLineNo: { fontFamily: mono, width: 34, textAlign: "right", paddingRight: 6, fontSize: 12, lineHeight: 22 },
-  compareCodeCell: { flex: 1, paddingRight: 8 },
-  compareEmpty: { margin: 14, borderRadius: 5, padding: 12, gap: 3 },
-  compareEmptyTitle: { fontFamily: "Inter_700Bold", fontSize: 13 },
-  compareEmptyText: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 17 },
-  statusBar: { borderTopWidth: 1, minHeight: 42, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 10, rowGap: 2 },
-  statusText: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  compareLine: { flexDirection: "row", alignItems: "flex-start", minHeight: 18, borderBottomWidth: StyleSheet.hairlineWidth },
+  compareMarker: { fontFamily: mono, width: 16, textAlign: "center", fontSize: 11, lineHeight: 16 },
+  compareLineNo: { fontFamily: mono, width: 30, textAlign: "right", paddingRight: 4, fontSize: 11, lineHeight: 16 },
+  compareCodeCell: { flex: 1, paddingRight: 4 },
+  compareEmpty: { margin: 8, padding: 8, gap: 2 },
+  compareEmptyTitle: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  compareEmptyText: { fontFamily: "Inter_500Medium", fontSize: 11, lineHeight: 16 },
+  statusBar: { borderTopWidth: 1, minHeight: 22, paddingHorizontal: 6, flexDirection: "row", alignItems: "center", gap: 6 },
+  statusSep: { width: 1, height: 12 },
+  statusSpacer: { flex: 1 },
+  statusText: { fontFamily: mono, fontSize: 11 },
 });
