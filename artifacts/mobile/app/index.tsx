@@ -382,9 +382,9 @@ export default function NotepadScreen() {
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top, paddingBottom: Platform.OS === "web" ? 34 : insets.bottom }]}>
         {!zenMode ? (
-          <View style={[styles.titleBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="document-text-outline" size={13} color={colors.foreground} />
-            <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.foreground }]}>{activeNote.title} - Notepad 3++</Text>
+          <View style={[styles.titleBar, { backgroundColor: colors.primary, borderColor: colors.border }]}>
+            <Ionicons name="document-text-outline" size={13} color={colors.primaryForeground} />
+            <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.primaryForeground }]}>{activeNote.title} - Notepad 3++</Text>
           </View>
         ) : null}
 
