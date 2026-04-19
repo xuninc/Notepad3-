@@ -43,13 +43,13 @@ jobs:
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
+
       - name: Install workspace dependencies
         working-directory: .
         run: pnpm install --no-frozen-lockfile
 
       - name: Select latest Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
-
       - name: Expo prebuild (iOS)
         env:
           EXPO_NO_TELEMETRY: "1"
