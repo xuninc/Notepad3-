@@ -6,6 +6,8 @@ import colorsModule, { Palette, themes, ThemeName } from "@/constants/colors";
 
 type ThemePreference = ThemeName | "system";
 
+const VALID: ThemePreference[] = ["classic", "light", "dark", "retro", "modern", "cyberpunk", "system"];
+
 type ThemeContextValue = {
   themeName: ThemeName;
   preference: ThemePreference;
@@ -25,8 +27,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((value) => {
-        if (value === "classic" || value === "light" || value === "dark" || value === "system") {
-          setPreferenceState(value);
+        if (value && (VALID as string[]).includes(value)) {
+          setPreferenceState(value as ThemePreference);
         }
       })
       .catch(() => undefined);
@@ -39,9 +41,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const themeName: ThemeName = preference === "system" ? (systemScheme === "dark" ? "dark" : "light") : preference;
 
+  const palette = themes[themeName];
   const value = useMemo<ThemeContextValue>(
-    () => ({ themeName, preference, setPreference, palette: themes[themeName], radius: colorsModule.radius }),
-    [themeName, preference],
+    () => ({ themeName, preference, setPreference, palette, radius: palette.radius ?? colorsModule.radius }),
+    [themeName, preference, palette],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
