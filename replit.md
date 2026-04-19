@@ -16,6 +16,10 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Artifacts
+
+- **PocketPad++** (`artifacts/mobile`) — Expo iPhone notepad-style app with local AsyncStorage persistence, multi-document tabs, a line-numbered editor, document search, language mode toggles, autosave status, and note duplication/deletion.
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
