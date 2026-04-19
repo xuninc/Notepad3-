@@ -1,10 +1,12 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Modal,
   NativeScrollEvent,
@@ -82,31 +84,50 @@ function MTarget({ id, onPress, children }: { id: string; onPress: () => void; c
   );
 }
 
-function MouseOverlay({ targetsRef, palette, colors, radius, onClose }: { targetsRef: React.MutableRefObject<Map<string, MouseRect>>; palette: ReturnType<typeof useTheme>["palette"]; colors: ReturnType<typeof useColors>; radius: number; onClose: () => void }) {
-  const [pos, setPos] = useState({ x: 200, y: 360 });
+const MouseOverlay = React.memo(function MouseOverlay({ targetsRef, palette, colors, radius, onClose }: { targetsRef: React.MutableRefObject<Map<string, MouseRect>>; palette: ReturnType<typeof useTheme>["palette"]; colors: ReturnType<typeof useColors>; radius: number; onClose: () => void }) {
+  const screen = Dimensions.get("window");
+  const [pos, setPos] = useState({ x: Math.round(screen.width / 2), y: Math.round(screen.height / 2) });
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(null);
+  const [moved, setMoved] = useState(false);
   const posRef = useRef(pos);
   posRef.current = pos;
-  const dragStart = useRef({ x: 0, y: 0 });
-  const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => { dragStart.current = { ...posRef.current }; },
-    onPanResponderMove: (_e, g) => setPos({ x: dragStart.current.x + g.dx, y: dragStart.current.y + g.dy }),
-  }), []);
-  const move = (dx: number, dy: number) => setPos((c) => ({ x: c.x + dx, y: c.y + dy }));
-  const click = () => {
-    const p = posRef.current;
-    setRipple({ x: p.x, y: p.y, key: Date.now() });
+  const lastRef = useRef({ x: 0, y: 0 });
+  const movedRef = useRef(false);
+  const SENS = 1.6;
+  const fireClickAt = useCallback((x: number, y: number) => {
+    setRipple({ x, y, key: Date.now() });
     Haptics.selectionAsync();
     const list = Array.from(targetsRef.current.values()).reverse();
     for (const t of list) {
-      if (p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h) {
+      if (x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) {
         t.onPress();
         return;
       }
     }
-  };
+  }, [targetsRef]);
+  const trackpad = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => { lastRef.current = { x: 0, y: 0 }; movedRef.current = false; setMoved(false); },
+    onPanResponderMove: (_e, g) => {
+      const ddx = (g.dx - lastRef.current.x) * SENS;
+      const ddy = (g.dy - lastRef.current.y) * SENS;
+      lastRef.current = { x: g.dx, y: g.dy };
+      if (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4) {
+        if (!movedRef.current) { movedRef.current = true; setMoved(true); }
+      }
+      setPos((c) => {
+        const w = Dimensions.get("window");
+        return { x: Math.max(0, Math.min(w.width - 1, c.x + ddx)), y: Math.max(0, Math.min(w.height - 1, c.y + ddy)) };
+      });
+    },
+    onPanResponderRelease: (_e, g) => {
+      if (!movedRef.current && Math.abs(g.dx) < 4 && Math.abs(g.dy) < 4) {
+        const p = posRef.current;
+        fireClickAt(p.x, p.y);
+      }
+    },
+  }), [fireClickAt]);
   useEffect(() => {
     if (!ripple) return;
     const t = setTimeout(() => setRipple(null), 380);
@@ -115,30 +136,30 @@ function MouseOverlay({ targetsRef, palette, colors, radius, onClose }: { target
   return (
     <>
       {ripple ? <View pointerEvents="none" style={[styles.clickRipple, { left: ripple.x - 18, top: ripple.y - 18, borderColor: colors.primary }]} /> : null}
-      <View {...panResponder.panHandlers} style={[styles.mousePointer, { left: pos.x, top: pos.y }]}>
+      <View pointerEvents="none" style={[styles.mousePointer, { left: pos.x, top: pos.y }]}>
         <Feather name="navigation" size={26} color={colors.primary} style={{ transform: [{ rotate: "-30deg" }] }} />
         <View style={[styles.mousePointerDot, { backgroundColor: colors.primary }]} />
       </View>
-      <View style={[styles.mousePad, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius }]}>
-        <View style={styles.mousePadRow}>
-          <View style={styles.mousePadCell} />
-          <Pressable onPress={() => move(0, -18)} style={[styles.mousePadKey, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]}><Feather name="chevron-up" size={14} color={colors.foreground} /></Pressable>
-          <View style={styles.mousePadCell} />
+      <View style={[styles.trackpadCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden" }]}>
+        <LinearGradient colors={palette.titleGradient} style={styles.trackpadHeader} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
+          <Feather name="mouse-pointer" size={11} color={colors.primaryForeground} />
+          <Text style={[styles.trackpadHeaderText, { color: colors.primaryForeground }]} numberOfLines={1}>Trackpad — drag to move, tap to click</Text>
+          <Pressable onPress={onClose} style={styles.trackpadClose} testID="mouse-close">
+            <Feather name="x" size={12} color={colors.primaryForeground} />
+          </Pressable>
+        </LinearGradient>
+        <View {...trackpad.panHandlers} style={[styles.trackpadSurface, { backgroundColor: colors.muted, borderColor: colors.border }]} testID="trackpad-surface">
+          <Text style={[styles.trackpadHint, { color: colors.mutedForeground }]}>{moved ? "" : "drag · tap"}</Text>
         </View>
-        <View style={styles.mousePadRow}>
-          <Pressable onPress={() => move(-18, 0)} style={[styles.mousePadKey, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]}><Feather name="chevron-left" size={14} color={colors.foreground} /></Pressable>
-          <Pressable onPress={click} style={[styles.mousePadClick, { backgroundColor: colors.primary, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]}><Text style={[styles.mousePadClickText, { color: colors.primaryForeground }]}>Click</Text></Pressable>
-          <Pressable onPress={() => move(18, 0)} style={[styles.mousePadKey, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]}><Feather name="chevron-right" size={14} color={colors.foreground} /></Pressable>
-        </View>
-        <View style={styles.mousePadRow}>
-          <Pressable onPress={onClose} style={[styles.mousePadKey, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]}><Feather name="x" size={12} color={colors.foreground} /></Pressable>
-          <Pressable onPress={() => move(0, 18)} style={[styles.mousePadKey, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]}><Feather name="chevron-down" size={14} color={colors.foreground} /></Pressable>
-          <View style={styles.mousePadCell} />
+        <View style={styles.trackpadButtons}>
+          <Pressable onPress={() => fireClickAt(posRef.current.x, posRef.current.y)} style={({ pressed }) => [styles.trackpadClick, { backgroundColor: colors.primary, borderColor: colors.border, borderRadius: Math.min(radius, 4), opacity: pressed ? 0.75 : 1 }]} testID="trackpad-click">
+            <Text style={[styles.trackpadClickText, { color: colors.primaryForeground }]}>Click</Text>
+          </Pressable>
         </View>
       </View>
     </>
   );
-}
+});
 
 function formatTime(value: number) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
@@ -373,6 +394,10 @@ export default function NotepadScreen() {
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replaceText, setReplaceText] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [useWildcards, setUseWildcards] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
+  const [pasteError, setPasteError] = useState("");
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [zenMode, setZenMode] = useState(false);
@@ -394,7 +419,6 @@ export default function NotepadScreen() {
   const comparableNotes = notes.filter((note) => note.id !== activeId);
   const compareNote = comparableNotes.find((note) => note.id === compareId) ?? comparableNotes[0];
   const comparison = compareDocuments(activeNote, compareNote);
-  const matches = getMatches(activeNote.body, findQuery, caseSensitive);
   const highlightedPreview = findQuery.trim()
     ? activeNote.body
         .split("\n")
@@ -443,10 +467,152 @@ export default function NotepadScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const buildFindRegex = (global: boolean): RegExp | null => {
+    const raw = findQuery;
+    if (!raw) return null;
+    let pattern: string;
+    try {
+      if (useRegex) {
+        pattern = raw;
+      } else if (useWildcards) {
+        pattern = raw.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+      } else {
+        pattern = escapeRegExp(raw);
+      }
+      if (wholeWord) pattern = `\\b(?:${pattern})\\b`;
+      const flags = `${global ? "g" : ""}${caseSensitive ? "" : "i"}`;
+      return new RegExp(pattern, flags);
+    } catch {
+      return null;
+    }
+  };
+
+  const matchInfo = useMemo(() => {
+    if (!findQuery) return { count: 0, error: "" };
+    const re = buildFindRegex(true);
+    if (!re) return { count: 0, error: "Invalid pattern" };
+    return { count: (activeNote.body.match(re) || []).length, error: "" };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findQuery, caseSensitive, wholeWord, useWildcards, useRegex, activeNote.body]);
+  const matchesCount = matchInfo.count;
+  const findError = matchInfo.error;
+
   const replaceAll = () => {
-    if (!findQuery.trim()) return;
-    updateActiveNote({ body: caseSensitive ? activeNote.body.split(findQuery.trim()).join(replaceText) : activeNote.body.replace(new RegExp(escapeRegExp(findQuery.trim()), "gi"), replaceText) });
+    if (!findQuery) return;
+    const re = buildFindRegex(true);
+    if (!re) return;
+    updateActiveNote({ body: activeNote.body.replace(re, replaceText) });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const replaceNext = () => {
+    if (!findQuery) return;
+    const re = buildFindRegex(true);
+    if (!re) return;
+    re.lastIndex = selection.start;
+    let match = re.exec(activeNote.body);
+    if (!match) {
+      re.lastIndex = 0;
+      match = re.exec(activeNote.body);
+    }
+    if (!match) return;
+    const before = activeNote.body.slice(0, match.index);
+    const after = activeNote.body.slice(match.index + match[0].length);
+    updateActiveNote({ body: `${before}${replaceText}${after}` });
+    const next = match.index + replaceText.length;
+    setSelection({ start: next, end: next });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const findNext = () => {
+    if (!findQuery) return;
+    const re = buildFindRegex(true);
+    if (!re) return;
+    re.lastIndex = selection.end;
+    let match = re.exec(activeNote.body);
+    if (!match) {
+      re.lastIndex = 0;
+      match = re.exec(activeNote.body);
+    }
+    if (!match) return;
+    setSelection({ start: match.index, end: match.index + match[0].length });
+    Haptics.selectionAsync();
+  };
+
+  const selectAll = () => {
+    setSelection({ start: 0, end: activeNote.body.length });
+    Haptics.selectionAsync();
+  };
+
+  const selectLine = () => {
+    const range = getLineRange(activeNote.body, selection.start);
+    setSelection({ start: range.start, end: range.end });
+    Haptics.selectionAsync();
+  };
+
+  const selectParagraph = () => {
+    const body = activeNote.body.replace(/\r\n/g, "\n");
+    const lines = body.split("\n");
+    const isBlank = (line: string) => /^\s*$/.test(line);
+    const offsets: number[] = [0];
+    for (let i = 0; i < lines.length; i += 1) offsets.push(offsets[i] + lines[i].length + 1);
+    const caret = Math.min(selection.start, body.length);
+    let lineIdx = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (caret >= offsets[i] && caret < offsets[i + 1]) { lineIdx = i; break; }
+      if (i === lines.length - 1) lineIdx = i;
+    }
+    if (isBlank(lines[lineIdx])) {
+      setSelection({ start: offsets[lineIdx], end: offsets[lineIdx] + lines[lineIdx].length });
+      Haptics.selectionAsync();
+      return;
+    }
+    let startLine = lineIdx;
+    while (startLine > 0 && !isBlank(lines[startLine - 1])) startLine -= 1;
+    let endLine = lineIdx;
+    while (endLine < lines.length - 1 && !isBlank(lines[endLine + 1])) endLine += 1;
+    const start = offsets[startLine];
+    const end = offsets[endLine] + lines[endLine].length;
+    setSelection({ start, end });
+    Haptics.selectionAsync();
+  };
+
+  const copySelection = async () => {
+    setPasteError("");
+    const text = selection.end > selection.start
+      ? activeNote.body.slice(selection.start, selection.end)
+      : activeNote.body;
+    try {
+      await Clipboard.setStringAsync(text);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      setPasteError("Could not copy to the clipboard.");
+    }
+  };
+
+  const cutSelection = async () => {
+    setPasteError("");
+    if (selection.end <= selection.start) return;
+    const text = activeNote.body.slice(selection.start, selection.end);
+    try {
+      await Clipboard.setStringAsync(text);
+      updateActiveNote({ body: `${activeNote.body.slice(0, selection.start)}${activeNote.body.slice(selection.end)}` });
+      setSelection({ start: selection.start, end: selection.start });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {
+      setPasteError("Could not cut to the clipboard.");
+    }
+  };
+
+  const pasteFromClipboard = async () => {
+    setPasteError("");
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (!text) { setPasteError("Clipboard is empty."); return; }
+      insertTextAtSelection(text);
+    } catch {
+      setPasteError("Could not read the clipboard.");
+    }
   };
 
   const duplicateCurrentLine = () => {
@@ -527,9 +693,20 @@ export default function NotepadScreen() {
                 ) : null}
                 {openMenu === "edit" ? (
                   <>
+                    <DropdownItem label="Cut" onPress={() => { cutSelection(); setOpenMenu(null); }} />
+                    <DropdownItem label="Copy" onPress={() => { copySelection(); setOpenMenu(null); }} />
+                    <DropdownItem label="Paste" onPress={() => { pasteFromClipboard(); setOpenMenu(null); }} />
+                    <DropdownSeparator />
+                    <DropdownItem label="Select all" onPress={() => { selectAll(); setOpenMenu(null); }} />
+                    <DropdownItem label="Select line" onPress={() => { selectLine(); setOpenMenu(null); }} />
+                    <DropdownItem label="Select paragraph" onPress={() => { selectParagraph(); setOpenMenu(null); }} />
+                    <DropdownSeparator />
                     <DropdownItem label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); setOpenMenu(null); }} />
                     <DropdownItem label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); setOpenMenu(null); }} />
-                    <DropdownItem label={caseSensitive ? "Case sensitive" : "Case sensitive"} checked={caseSensitive} onPress={() => { setCaseSensitive((current) => !current); setOpenMenu(null); }} />
+                    <DropdownItem label="Case sensitive" checked={caseSensitive} onPress={() => { setCaseSensitive((current) => !current); setOpenMenu(null); }} />
+                    <DropdownItem label="Whole word" checked={wholeWord} onPress={() => { setWholeWord((c) => !c); setOpenMenu(null); }} />
+                    <DropdownItem label="Wildcards (* ?)" checked={useWildcards} onPress={() => { setUseWildcards((c) => { const n = !c; if (n) setUseRegex(false); return n; }); setOpenMenu(null); }} />
+                    <DropdownItem label="Regular expression" checked={useRegex} onPress={() => { setUseRegex((c) => { const n = !c; if (n) setUseWildcards(false); return n; }); setOpenMenu(null); }} />
                     <DropdownSeparator />
                     <DropdownItem label="Insert timestamp" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setOpenMenu(null); }} />
                     <DropdownItem label="Duplicate line" onPress={() => { duplicateCurrentLine(); setOpenMenu(null); }} />
@@ -565,25 +742,35 @@ export default function NotepadScreen() {
           {!zenMode && toolbarOpen ? (
             <View style={[styles.toolbar, { borderColor: colors.border, overflow: "hidden" }]}>
               <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-              <IconButton id="tb-new" icon="file-plus" color={colors.foreground} onPress={createNote} />
-              <IconButton id="tb-open" icon="folder" color={colors.foreground} onPress={importFromFiles} />
-              <IconButton id="tb-dup" icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarRow}>
+                <IconButton id="tb-new" icon="file-plus" color={colors.foreground} onPress={createNote} />
+                <IconButton id="tb-open" icon="folder" color={colors.foreground} onPress={importFromFiles} />
+                <IconButton id="tb-dup" icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
+                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                <IconButton id="tb-cut" icon="scissors" color={colors.foreground} onPress={cutSelection} />
+                <IconButton id="tb-copy" icon="clipboard" color={colors.foreground} onPress={copySelection} />
+                <IconButton id="tb-paste" icon="download" color={colors.foreground} onPress={pasteFromClipboard} />
+                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                <IconButton id="tb-selall" icon="maximize" color={colors.foreground} onPress={selectAll} />
+                <IconButton id="tb-selline" icon="minus" color={colors.foreground} onPress={selectLine} />
+                <IconButton id="tb-selpar" icon="align-justify" color={colors.foreground} onPress={selectParagraph} />
+                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                <IconButton id="tb-find" icon="search" color={findOpen ? colors.primary : colors.foreground} onPress={() => setFindOpen((current) => !current)} />
+                <IconButton id="tb-rep" icon="repeat" color={replaceOpen ? colors.primary : colors.foreground} onPress={() => { setFindOpen(true); setReplaceOpen((current) => !current); }} />
+                <IconButton id="tb-stamp" icon="clock" color={colors.foreground} onPress={() => insertTextAtSelection(new Date().toLocaleString())} />
+                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                <IconButton id="tb-dupl" icon="plus-square" color={colors.foreground} onPress={duplicateCurrentLine} />
+                <IconButton id="tb-cutl" icon="x-circle" color={colors.foreground} onPress={deleteCurrentLine} />
+                <IconButton id="tb-sort" icon="list" color={colors.foreground} onPress={sortLines} />
+                <IconButton id="tb-trim" icon="align-left" color={colors.foreground} onPress={trimTrailingSpaces} />
+                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                <IconButton id="tb-cmp" icon="columns" color={compareOpen ? colors.primary : colors.foreground} onPress={toggleCompare} />
+                <IconButton id="tb-zen" icon={zenMode ? "minimize-2" : "maximize-2"} color={colors.foreground} onPress={() => setZenMode((current) => !current)} />
+                <IconButton id="tb-mouse" icon="mouse-pointer" color={mouseOn ? colors.primary : colors.foreground} onPress={() => setMouseOn((current) => !current)} />
+                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                <IconButton id="tb-del" icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
+              </ScrollView>
               <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-              <IconButton id="tb-find" icon="search" color={findOpen ? colors.primary : colors.foreground} onPress={() => setFindOpen((current) => !current)} />
-              <IconButton id="tb-rep" icon="repeat" color={replaceOpen ? colors.primary : colors.foreground} onPress={() => { setFindOpen(true); setReplaceOpen((current) => !current); }} />
-              <IconButton id="tb-stamp" icon="clock" color={colors.foreground} onPress={() => insertTextAtSelection(new Date().toLocaleString())} />
-              <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-              <IconButton id="tb-dupl" icon="plus-square" color={colors.foreground} onPress={duplicateCurrentLine} />
-              <IconButton id="tb-cutl" icon="scissors" color={colors.foreground} onPress={deleteCurrentLine} />
-              <IconButton id="tb-sort" icon="list" color={colors.foreground} onPress={sortLines} />
-              <IconButton id="tb-trim" icon="align-left" color={colors.foreground} onPress={trimTrailingSpaces} />
-              <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-              <IconButton id="tb-cmp" icon="columns" color={compareOpen ? colors.primary : colors.foreground} onPress={toggleCompare} />
-              <IconButton id="tb-zen" icon={zenMode ? "minimize-2" : "maximize-2"} color={colors.foreground} onPress={() => setZenMode((current) => !current)} />
-              <IconButton id="tb-mouse" icon="mouse-pointer" color={mouseOn ? colors.primary : colors.foreground} onPress={() => setMouseOn((current) => !current)} />
-              <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-              <IconButton id="tb-del" icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
-              <View style={styles.toolbarSpacer} />
               <IconButton id="tb-collapse" icon="chevron-up" color={colors.foreground} onPress={() => setToolbarOpen(false)} />
             </View>
           ) : null}
@@ -619,23 +806,50 @@ export default function NotepadScreen() {
               <View style={[styles.findPanel, { borderColor: colors.border, backgroundColor: colors.card }]}>
                 <View style={styles.findBar}>
                   <Feather name="search" size={17} color={colors.mutedForeground} />
-                  <TextInput value={findQuery} onChangeText={setFindQuery} style={[styles.findInput, { color: colors.foreground, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} placeholder="Find in document" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" testID="find-input" />
-                  <Pressable onPress={() => setCaseSensitive((current) => !current)} style={[styles.caseToggle, { backgroundColor: caseSensitive ? colors.primary : colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="case-toggle">
-                    <Text style={[styles.caseToggleText, { color: caseSensitive ? colors.primaryForeground : colors.mutedForeground }]}>Aa</Text>
+                  <TextInput value={findQuery} onChangeText={setFindQuery} style={[styles.findInput, { color: colors.foreground, borderColor: findError ? colors.destructive : colors.border, borderRadius: Math.min(radius, 4) }]} placeholder="Find in document" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" testID="find-input" />
+                  <Pressable onPress={findNext} disabled={!findQuery || matchesCount === 0} style={({ pressed }) => [styles.replaceButton, { backgroundColor: colors.secondary, borderRadius: Math.min(radius, 4), opacity: (!findQuery || matchesCount === 0) ? 0.35 : pressed ? 0.7 : 1 }]} testID="find-next">
+                    <Text style={[styles.replaceButtonText, { color: colors.secondaryForeground }]}>Next</Text>
                   </Pressable>
-                  <Text style={[styles.findCount, { color: colors.mutedForeground }]}>{matches}</Text>
+                  <Text style={[styles.findCount, { color: findError ? colors.destructive : colors.mutedForeground }]}>{findError || `${matchesCount}`}</Text>
+                </View>
+                <View style={styles.findOptionsRow}>
+                  <Pressable onPress={() => setCaseSensitive((c) => !c)} style={[styles.findOpt, { backgroundColor: caseSensitive ? colors.primary : colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="opt-case">
+                    <Text style={[styles.findOptText, { color: caseSensitive ? colors.primaryForeground : colors.mutedForeground }]}>Aa</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setWholeWord((c) => !c)} style={[styles.findOpt, { backgroundColor: wholeWord ? colors.primary : colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="opt-word">
+                    <Text style={[styles.findOptText, { color: wholeWord ? colors.primaryForeground : colors.mutedForeground }]}>W</Text>
+                  </Pressable>
+                  <Pressable onPress={() => { setUseWildcards((c) => !c); if (!useWildcards) setUseRegex(false); }} style={[styles.findOpt, { backgroundColor: useWildcards ? colors.primary : colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="opt-wild">
+                    <Text style={[styles.findOptText, { color: useWildcards ? colors.primaryForeground : colors.mutedForeground }]}>* ?</Text>
+                  </Pressable>
+                  <Pressable onPress={() => { setUseRegex((c) => !c); if (!useRegex) setUseWildcards(false); }} style={[styles.findOpt, { backgroundColor: useRegex ? colors.primary : colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="opt-regex">
+                    <Text style={[styles.findOptText, { color: useRegex ? colors.primaryForeground : colors.mutedForeground }]}>.*</Text>
+                  </Pressable>
+                  <View style={{ flex: 1 }} />
+                  <Pressable onPress={() => { setFindOpen(false); setReplaceOpen(false); }} style={[styles.findOpt, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="find-close">
+                    <Feather name="x" size={12} color={colors.mutedForeground} />
+                  </Pressable>
                 </View>
                 {replaceOpen ? (
-                  <View style={styles.findBar}>
-                    <Feather name="repeat" size={17} color={colors.mutedForeground} />
-                    <TextInput value={replaceText} onChangeText={setReplaceText} style={[styles.findInput, { color: colors.foreground, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} placeholder="Replace with" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" testID="replace-input" />
-                    <Pressable onPress={replaceAll} disabled={!findQuery.trim()} style={({ pressed }) => [styles.replaceButton, { backgroundColor: colors.secondary, borderRadius: Math.min(radius, 4), opacity: !findQuery.trim() ? 0.35 : pressed ? 0.7 : 1 }]} testID="replace-all">
-                      <Text style={[styles.replaceButtonText, { color: colors.secondaryForeground }]}>All</Text>
-                    </Pressable>
-                  </View>
+                  <>
+                    <View style={styles.findBar}>
+                      <Feather name="repeat" size={17} color={colors.mutedForeground} />
+                      <TextInput value={replaceText} onChangeText={setReplaceText} style={[styles.findInput, { color: colors.foreground, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} placeholder="Replace with (empty = remove)" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" testID="replace-input" />
+                      <Pressable onPress={replaceNext} disabled={!findQuery || matchesCount === 0} style={({ pressed }) => [styles.replaceButton, { backgroundColor: colors.secondary, borderRadius: Math.min(radius, 4), opacity: (!findQuery || matchesCount === 0) ? 0.35 : pressed ? 0.7 : 1 }]} testID="replace-next">
+                        <Text style={[styles.replaceButtonText, { color: colors.secondaryForeground }]}>One</Text>
+                      </Pressable>
+                      <Pressable onPress={replaceAll} disabled={!findQuery || matchesCount === 0} style={({ pressed }) => [styles.replaceButton, { backgroundColor: colors.primary, borderRadius: Math.min(radius, 4), opacity: (!findQuery || matchesCount === 0) ? 0.35 : pressed ? 0.7 : 1 }]} testID="replace-all">
+                        <Text style={[styles.replaceButtonText, { color: colors.primaryForeground }]}>All</Text>
+                      </Pressable>
+                    </View>
+                    {!replaceText && findQuery ? (
+                      <Text style={[styles.findHint, { color: colors.mutedForeground }]}>Empty replace removes every match.</Text>
+                    ) : null}
+                  </>
                 ) : null}
               </View>
             ) : null}
+            {pasteError ? <Text style={[styles.errorText, { color: colors.destructive, backgroundColor: colors.card }]}>{pasteError}</Text> : null}
 
             {compareOpen ? (
               <View style={styles.compareWorkspace}>
@@ -706,6 +920,13 @@ export default function NotepadScreen() {
             <Text style={[styles.statusText, { color: colors.success }]}>saved {formatTime(activeNote.updatedAt)}</Text>
           </View>
         </View>
+
+        {zenMode ? (
+          <Pressable onPress={() => setZenMode(false)} style={[styles.zenExit, { top: insets.top + 8, backgroundColor: colors.card, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="zen-exit">
+            <Feather name="minimize-2" size={14} color={colors.foreground} />
+            <Text style={[styles.zenExitText, { color: colors.foreground }]}>Exit Zen</Text>
+          </Pressable>
+        ) : null}
 
         {mouseOn ? (
           <MouseOverlay targetsRef={mouseTargetsRef} palette={palette} colors={colors} radius={radius} onClose={() => setMouseOn(false)} />
@@ -805,6 +1026,13 @@ const styles = StyleSheet.create({
   toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 3, borderBottomWidth: 1, gap: 1 },
   toolbarSep: { width: 1, height: 18, marginHorizontal: 3 },
   toolbarSpacer: { flex: 1 },
+  toolbarRow: { flexDirection: "row", alignItems: "center", paddingRight: 4 },
+  findOptionsRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingTop: 2 },
+  findOpt: { paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, alignItems: "center", justifyContent: "center", minWidth: 28 },
+  findOptText: { fontFamily: mono, fontSize: 11, fontWeight: "600" },
+  findHint: { fontFamily: mono, fontSize: 10, paddingHorizontal: 8, paddingBottom: 4 },
+  zenExit: { position: "absolute", right: 12, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, opacity: 0.92 },
+  zenExitText: { fontFamily: mono, fontSize: 11 },
   toolbarStrip: { borderBottomWidth: 1, height: 18, justifyContent: "center" },
   toolbarStripPress: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 18 },
   toolbarStripText: { fontFamily: "Inter_500Medium", fontSize: 10 },
@@ -891,6 +1119,15 @@ const styles = StyleSheet.create({
   mousePointer: { position: "absolute", width: 36, height: 36, alignItems: "center", justifyContent: "center", zIndex: 200 },
   mousePointerDot: { position: "absolute", width: 4, height: 4, borderRadius: 2, top: 14, left: 14 },
   clickRipple: { position: "absolute", width: 36, height: 36, borderRadius: 18, borderWidth: 2, zIndex: 199 },
+  trackpadCard: { position: "absolute", right: 12, bottom: 24, width: 220, borderWidth: 1, zIndex: 201 },
+  trackpadHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 5 },
+  trackpadHeaderText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 10 },
+  trackpadClose: { padding: 2 },
+  trackpadSurface: { height: 130, borderTopWidth: 1, borderBottomWidth: 1, alignItems: "center", justifyContent: "center" },
+  trackpadHint: { fontFamily: mono, fontSize: 11, opacity: 0.6 },
+  trackpadButtons: { flexDirection: "row", padding: 6 },
+  trackpadClick: { flex: 1, paddingVertical: 8, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  trackpadClickText: { fontFamily: "Inter_700Bold", fontSize: 11 },
   mousePad: { position: "absolute", right: 12, bottom: 24, padding: 4, borderWidth: 1, gap: 3, zIndex: 201 },
   mousePadRow: { flexDirection: "row", gap: 3 },
   mousePadCell: { width: 28, height: 28 },
