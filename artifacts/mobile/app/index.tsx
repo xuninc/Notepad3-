@@ -330,13 +330,26 @@ function DropdownSeparator() {
   return <View style={[styles.dropdownSeparator, { backgroundColor: colors.border }]} />;
 }
 
-function IconButton({ id, icon, onPress, color, disabled }: { id: string; icon: keyof typeof Feather.glyphMap; onPress: () => void; color: string; disabled?: boolean }) {
+function IconButton({ id, icon, onPress, color, disabled, label, showLabel, onLongPress }: { id: string; icon: keyof typeof Feather.glyphMap; onPress: () => void; color: string; disabled?: boolean; label?: string; showLabel?: boolean; onLongPress?: (label: string) => void }) {
   const colors = useColors();
   const { radius } = useTheme();
+  const handleLong = label && onLongPress ? () => onLongPress(label) : undefined;
   return (
     <MTarget id={id} onPress={onPress}>
-      <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.iconButton, { backgroundColor: pressed ? colors.secondary : "transparent", opacity: disabled ? 0.35 : 1, borderRadius: Math.min(radius, 4) }]} testID={`button-${icon}`}>
+      <Pressable
+        disabled={disabled}
+        onPress={onPress}
+        onLongPress={handleLong}
+        delayLongPress={400}
+        style={({ pressed }) => [styles.iconButton, showLabel ? styles.iconButtonWithLabel : null, { backgroundColor: pressed ? colors.secondary : "transparent", opacity: disabled ? 0.35 : 1, borderRadius: Math.min(radius, 4) }]}
+        testID={`button-${icon}`}
+        accessibilityRole="button"
+        accessibilityLabel={label ?? icon}
+      >
         <Feather name={icon} size={16} color={color} />
+        {showLabel && label ? (
+          <Text numberOfLines={1} style={[styles.iconButtonLabel, { color: colors.foreground }]}>{label}</Text>
+        ) : null}
       </Pressable>
     </MTarget>
   );
@@ -420,7 +433,15 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, palette, radius } = useTheme();
+  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, palette, radius } = useTheme();
+  const [toolbarTip, setToolbarTip] = useState<string | null>(null);
+  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTip = useCallback((text: string) => {
+    setToolbarTip(text);
+    if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+    tipTimerRef.current = setTimeout(() => setToolbarTip(null), 1600);
+  }, []);
+  useEffect(() => () => { if (tipTimerRef.current) clearTimeout(tipTimerRef.current); }, []);
   const { notes, activeNote, activeId, isLoaded, createNote, importNote, updateActiveNote, deleteActiveNote, duplicateActiveNote, deleteNote, closeOthers, renameNote, duplicateNote, setActiveId } = useNotes();
   const [tabMenuId, setTabMenuId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
@@ -776,41 +797,72 @@ export default function NotepadScreen() {
             </Pressable>
           ) : null}
 
-          {!zenMode && toolbarOpen ? (
-            <View style={[styles.toolbar, { borderColor: colors.border, overflow: "hidden" }]}>
-              <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarRow}>
-                <IconButton id="tb-new" icon="file-plus" color={colors.foreground} onPress={createNote} />
-                <IconButton id="tb-open" icon="folder" color={colors.foreground} onPress={importFromFiles} />
-                <IconButton id="tb-dup" icon="copy" color={colors.foreground} onPress={duplicateActiveNote} />
+          {!zenMode && toolbarOpen ? (() => {
+            type TbItem = { kind: "btn"; id: string; icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; color: string } | { kind: "sep" };
+            const items: TbItem[] = [
+              { kind: "btn", id: "tb-new", icon: "file-plus", label: "New", onPress: createNote, color: colors.foreground },
+              { kind: "btn", id: "tb-open", icon: "folder", label: "Open", onPress: importFromFiles, color: colors.foreground },
+              { kind: "btn", id: "tb-dup", icon: "copy", label: "Duplicate doc", onPress: duplicateActiveNote, color: colors.foreground },
+              { kind: "sep" },
+              { kind: "btn", id: "tb-cut", icon: "scissors", label: "Cut", onPress: cutSelection, color: colors.foreground },
+              { kind: "btn", id: "tb-copy", icon: "clipboard", label: "Copy", onPress: copySelection, color: colors.foreground },
+              { kind: "btn", id: "tb-paste", icon: "download", label: "Paste", onPress: pasteFromClipboard, color: colors.foreground },
+              { kind: "sep" },
+              { kind: "btn", id: "tb-selall", icon: "maximize", label: "Select all", onPress: selectAll, color: colors.foreground },
+              { kind: "btn", id: "tb-selline", icon: "minus", label: "Select line", onPress: selectLine, color: colors.foreground },
+              { kind: "btn", id: "tb-selpar", icon: "align-justify", label: "Select paragraph", onPress: selectParagraph, color: colors.foreground },
+              { kind: "sep" },
+              { kind: "btn", id: "tb-find", icon: "search", label: "Find", onPress: () => setFindOpen((c) => !c), color: findOpen ? colors.primary : colors.foreground },
+              { kind: "btn", id: "tb-rep", icon: "repeat", label: "Replace", onPress: () => { setFindOpen(true); setReplaceOpen((c) => !c); }, color: replaceOpen ? colors.primary : colors.foreground },
+              { kind: "btn", id: "tb-stamp", icon: "clock", label: "Insert date", onPress: () => insertTextAtSelection(new Date().toLocaleString()), color: colors.foreground },
+              { kind: "sep" },
+              { kind: "btn", id: "tb-dupl", icon: "plus-square", label: "Duplicate line", onPress: duplicateCurrentLine, color: colors.foreground },
+              { kind: "btn", id: "tb-cutl", icon: "x-circle", label: "Delete line", onPress: deleteCurrentLine, color: colors.foreground },
+              { kind: "btn", id: "tb-sort", icon: "list", label: "Sort lines", onPress: sortLines, color: colors.foreground },
+              { kind: "btn", id: "tb-trim", icon: "align-left", label: "Trim spaces", onPress: trimTrailingSpaces, color: colors.foreground },
+              { kind: "sep" },
+              { kind: "btn", id: "tb-cmp", icon: "columns", label: "Compare", onPress: toggleCompare, color: compareOpen ? colors.primary : colors.foreground },
+              { kind: "btn", id: "tb-zen", icon: zenMode ? "minimize-2" : "maximize-2", label: "Zen mode", onPress: () => setZenMode((c) => !c), color: colors.foreground },
+              { kind: "btn", id: "tb-mouse", icon: "mouse-pointer", label: "Trackpad", onPress: () => setMouseOn((c) => !c), color: mouseOn ? colors.primary : colors.foreground },
+              { kind: "sep" },
+              { kind: "btn", id: "tb-del", icon: "trash-2", label: "Delete doc", onPress: deleteActiveNote, color: colors.destructive },
+            ];
+            const renderItem = (it: TbItem, idx: number) => it.kind === "sep"
+              ? <View key={`sep-${idx}`} style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+              : <IconButton key={it.id} id={it.id} icon={it.icon} color={it.color} onPress={it.onPress} label={it.label} showLabel={toolbarLabels} onLongPress={showTip} />;
+            const rowHeight = toolbarLabels ? 44 : 30;
+            if (toolbarRows === "double") {
+              const half = Math.ceil(items.length / 2);
+              const top = items.slice(0, half);
+              const bot = items.slice(half);
+              return (
+                <View style={[styles.toolbar, styles.toolbarDouble, { borderColor: colors.border, overflow: "hidden" }]}>
+                  <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                  <View style={{ flex: 1 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarRow} style={{ height: rowHeight }}>
+                      {top.map(renderItem)}
+                    </ScrollView>
+                    <View style={[styles.toolbarRowSep, { backgroundColor: colors.border }]} />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarRow} style={{ height: rowHeight }}>
+                      {bot.map(renderItem)}
+                    </ScrollView>
+                  </View>
+                  <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
+                  <IconButton id="tb-collapse" icon="chevron-up" color={colors.foreground} onPress={() => setToolbarOpen(false)} label="Hide toolbar" onLongPress={showTip} />
+                </View>
+              );
+            }
+            return (
+              <View style={[styles.toolbar, { borderColor: colors.border, overflow: "hidden" }]}>
+                <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarRow} style={{ height: rowHeight }}>
+                  {items.map(renderItem)}
+                </ScrollView>
                 <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-                <IconButton id="tb-cut" icon="scissors" color={colors.foreground} onPress={cutSelection} />
-                <IconButton id="tb-copy" icon="clipboard" color={colors.foreground} onPress={copySelection} />
-                <IconButton id="tb-paste" icon="download" color={colors.foreground} onPress={pasteFromClipboard} />
-                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-                <IconButton id="tb-selall" icon="maximize" color={colors.foreground} onPress={selectAll} />
-                <IconButton id="tb-selline" icon="minus" color={colors.foreground} onPress={selectLine} />
-                <IconButton id="tb-selpar" icon="align-justify" color={colors.foreground} onPress={selectParagraph} />
-                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-                <IconButton id="tb-find" icon="search" color={findOpen ? colors.primary : colors.foreground} onPress={() => setFindOpen((current) => !current)} />
-                <IconButton id="tb-rep" icon="repeat" color={replaceOpen ? colors.primary : colors.foreground} onPress={() => { setFindOpen(true); setReplaceOpen((current) => !current); }} />
-                <IconButton id="tb-stamp" icon="clock" color={colors.foreground} onPress={() => insertTextAtSelection(new Date().toLocaleString())} />
-                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-                <IconButton id="tb-dupl" icon="plus-square" color={colors.foreground} onPress={duplicateCurrentLine} />
-                <IconButton id="tb-cutl" icon="x-circle" color={colors.foreground} onPress={deleteCurrentLine} />
-                <IconButton id="tb-sort" icon="list" color={colors.foreground} onPress={sortLines} />
-                <IconButton id="tb-trim" icon="align-left" color={colors.foreground} onPress={trimTrailingSpaces} />
-                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-                <IconButton id="tb-cmp" icon="columns" color={compareOpen ? colors.primary : colors.foreground} onPress={toggleCompare} />
-                <IconButton id="tb-zen" icon={zenMode ? "minimize-2" : "maximize-2"} color={colors.foreground} onPress={() => setZenMode((current) => !current)} />
-                <IconButton id="tb-mouse" icon="mouse-pointer" color={mouseOn ? colors.primary : colors.foreground} onPress={() => setMouseOn((current) => !current)} />
-                <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-                <IconButton id="tb-del" icon="trash-2" color={colors.destructive} onPress={deleteActiveNote} />
-              </ScrollView>
-              <View style={[styles.toolbarSep, { backgroundColor: colors.border }]} />
-              <IconButton id="tb-collapse" icon="chevron-up" color={colors.foreground} onPress={() => setToolbarOpen(false)} />
-            </View>
-          ) : null}
+                <IconButton id="tb-collapse" icon="chevron-up" color={colors.foreground} onPress={() => setToolbarOpen(false)} label="Hide toolbar" onLongPress={showTip} />
+              </View>
+            );
+          })() : null}
 
           {!zenMode && !toolbarOpen ? (
             <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
@@ -983,6 +1035,12 @@ export default function NotepadScreen() {
           <MouseOverlay targetsRef={mouseTargetsRef} palette={palette} colors={colors} radius={radius} onClose={() => setMouseOn(false)} />
         ) : null}
 
+        {toolbarTip ? (
+          <View pointerEvents="none" style={[styles.tooltipBubble, { top: insets.top + 6, backgroundColor: colors.foreground, borderColor: colors.border, borderRadius: Math.min(radius, 6) }]}>
+            <Text style={[styles.tooltipText, { color: colors.background }]} numberOfLines={1}>{toolbarTip}</Text>
+          </View>
+        ) : null}
+
         <Modal visible={tabMenuId !== null} transparent animationType="fade" onRequestClose={() => setTabMenuId(null)}>
           <Pressable onPress={() => setTabMenuId(null)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
             <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden", maxWidth: 320 }]}>
@@ -1138,7 +1196,31 @@ export default function NotepadScreen() {
                     </Pressable>
                   );
                 })}
-                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Choices are saved on this device.</Text>
+                <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Toolbar layout</Text>
+                {([{ id: "single" as const, label: "Single row", hint: "Scroll horizontally to reach more icons" }, { id: "double" as const, label: "Two rows", hint: "Stack icons in two scrollable rows" }]).map((opt) => {
+                  const selected = toolbarRows === opt.id;
+                  return (
+                    <Pressable key={opt.id} onPress={() => setToolbarRows(opt.id)} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID={`toolbar-rows-${opt.id}`}>
+                      <View style={[styles.radio, { borderColor: selected ? colors.primaryForeground : colors.foreground }]}>
+                        {selected ? <View style={[styles.radioDot, { backgroundColor: colors.primaryForeground }]} /> : null}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{opt.label}</Text>
+                        <Text style={[styles.prefRowHint, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{opt.hint}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                <Pressable onPress={() => setToolbarLabels(!toolbarLabels)} style={({ pressed }) => [styles.prefRow, { backgroundColor: toolbarLabels ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="toolbar-labels-toggle">
+                  <View style={[styles.radio, { borderColor: toolbarLabels ? colors.primaryForeground : colors.foreground, borderRadius: 3 }]}>
+                    {toolbarLabels ? <Feather name="check" size={12} color={colors.primaryForeground} /> : null}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.prefRowLabel, { color: toolbarLabels ? colors.primaryForeground : colors.foreground }]}>Show text under icons</Text>
+                    <Text style={[styles.prefRowHint, { color: toolbarLabels ? colors.primaryForeground : colors.mutedForeground }]}>Always visible labels for every toolbar button</Text>
+                  </View>
+                </Pressable>
+                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Choices are saved on this device.</Text>
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -1177,7 +1259,9 @@ const styles = StyleSheet.create({
   titleBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
   titleBarText: { fontFamily: "Inter_500Medium", fontSize: 12, flex: 1 },
   toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 3, borderBottomWidth: 1, gap: 1 },
+  toolbarDouble: { alignItems: "stretch", paddingVertical: 2 },
   toolbarSep: { width: 1, height: 18, marginHorizontal: 3 },
+  toolbarRowSep: { height: 1, marginVertical: 2 },
   toolbarSpacer: { flex: 1 },
   toolbarRow: { flexDirection: "row", alignItems: "center", paddingRight: 4 },
   findOptionsRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingTop: 2 },
@@ -1190,6 +1274,10 @@ const styles = StyleSheet.create({
   toolbarStripPress: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 18 },
   toolbarStripText: { fontFamily: "Inter_500Medium", fontSize: 10 },
   iconButton: { alignItems: "center", justifyContent: "center", minHeight: 26, minWidth: 26, paddingHorizontal: 4 },
+  iconButtonWithLabel: { minWidth: 52, paddingHorizontal: 6, paddingVertical: 2 },
+  iconButtonLabel: { fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 2, maxWidth: 64, textAlign: "center" },
+  tooltipBubble: { position: "absolute", alignSelf: "center", left: 24, right: 24, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, alignItems: "center" },
+  tooltipText: { fontFamily: "Inter_700Bold", fontSize: 12 },
   tabsList: { paddingHorizontal: 4 },
   tabsScroller: { flexGrow: 0, maxHeight: 28, borderBottomWidth: 1 },
   documentTab: { maxWidth: 180, borderWidth: 1, marginRight: 2, marginTop: 2, flexDirection: "row", alignItems: "center" },
