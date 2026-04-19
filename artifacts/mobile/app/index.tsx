@@ -20,9 +20,32 @@ import {
   TextInput,
   TextInputSelectionChangeEventData,
   View,
+import { Feather, Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
+import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  PanResponder,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextInputSelectionChangeEventData,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CUSTOM_PALETTE_KEYS, customDefaults, customPaletteLabels, CustomPaletteKey } from "@/constants/colors";
 import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
@@ -478,6 +501,8 @@ export default function NotepadScreen() {
   const [openMenu, setOpenMenu] = useState<null | "file" | "edit" | "view" | "tools" | "help">(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [gotoOpen, setGotoOpen] = useState(false);
+  const [gotoValue, setGotoValue] = useState("");
   const [langOpen, setLangOpen] = useState(false);
   const [mouseOn, setMouseOn] = useState(false);
   const mouseTargetsRef = useRef<Map<string, MouseRect>>(new Map());
@@ -1036,7 +1061,9 @@ export default function NotepadScreen() {
 
           <View style={[styles.statusBar, { borderColor: colors.border, overflow: "hidden" }]}>
             <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-            <Text style={[styles.statusText, { color: colors.foreground }]}>Ln {cursor.line}, Col {cursor.column}</Text>
+            <Pressable onPress={() => { setGotoValue(String(cursor.line)); setGotoOpen(true); }} testID="status-goto" hitSlop={6}>
+              <Text style={[styles.statusText, { color: colors.foreground, textDecorationLine: "underline" }]}>Ln {cursor.line}, Col {cursor.column}</Text>
+            </Pressable>
             <View style={[styles.statusSep, { backgroundColor: colors.border }]} />
             <Text style={[styles.statusText, { color: colors.foreground }]}>{stats.lines}L  {stats.words}W  {stats.chars}C</Text>
             {selectedChars > 0 ? (
@@ -1291,6 +1318,45 @@ export default function NotepadScreen() {
           </Pressable>
         </Modal>
 
+        <Modal visible={gotoOpen} transparent animationType="fade" onRequestClose={() => setGotoOpen(false)}>
+          <Pressable onPress={() => setGotoOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+            <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden", maxWidth: 320 }]}>
+              <View style={[styles.modalHeader, { borderColor: colors.border }]}>
+                <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <Text style={[styles.modalTitle, { color: colors.primaryForeground }]}>Go to line</Text>
+                <Pressable onPress={() => setGotoOpen(false)} style={[styles.modalClose, { borderColor: colors.primaryForeground }]} testID="goto-close">
+                  <Text style={[styles.modalCloseText, { color: colors.primaryForeground }]}>×</Text>
+                </Pressable>
+              </View>
+              <View style={styles.modalBody}>
+                <Text style={[styles.aboutText, { color: colors.mutedForeground, marginBottom: 6 }]}>Line 1 to {stats.lines}</Text>
+                <TextInput
+                  value={gotoValue}
+                  onChangeText={setGotoValue}
+                  keyboardType="number-pad"
+                  autoFocus
+                  returnKeyType="go"
+                  onSubmitEditing={() => {
+                    const n = parseInt(gotoValue, 10);
+                    if (!Number.isFinite(n) || n < 1) { setGotoOpen(false); return; }
+                    const body = activeNote.body.replace(/\r\n/g, "\n");
+                    const lines = body.split("\n");
+                    const target = Math.max(1, Math.min(n, lines.length));
+                    let off = 0;
+                    for (let i = 0; i < target - 1; i += 1) off += lines[i].length + 1;
+                    setSelection({ start: off, end: off });
+                    setGotoOpen(false);
+                    Haptics.selectionAsync();
+                  }}
+                  style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 6, fontFamily: mono, fontSize: 14, color: colors.foreground, backgroundColor: colors.editorBackground }}
+                  testID="goto-input"
+                />
+                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: tap "Ln X, Col Y" any time to jump.</Text>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         <Modal visible={aboutOpen} transparent animationType="fade" onRequestClose={() => setAboutOpen(false)}>
           <Pressable onPress={() => setAboutOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
             <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden" }]}>
@@ -1310,6 +1376,153 @@ export default function NotepadScreen() {
             </Pressable>
           </Pressable>
         </Modal>
+      </View>
+    </MouseContext.Provider>
+  );
+}
+
+const mono = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
+
+const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  container: { flex: 1 },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  titleBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
+  titleBarText: { fontFamily: "Inter_500Medium", fontSize: 12, flex: 1 },
+  toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 3, borderBottomWidth: 1, gap: 1 },
+  toolbarDouble: { alignItems: "stretch", paddingVertical: 2 },
+  toolbarSep: { width: 1, height: 18, marginHorizontal: 3 },
+  toolbarRowSep: { height: 1, marginVertical: 2 },
+  toolbarSpacer: { flex: 1 },
+  toolbarRow: { flexDirection: "row", alignItems: "center", paddingRight: 4 },
+  findOptionsRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingTop: 2 },
+  findOpt: { paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, alignItems: "center", justifyContent: "center", minWidth: 28 },
+  findOptText: { fontFamily: mono, fontSize: 11, fontWeight: "600" },
+  findHint: { fontFamily: mono, fontSize: 10, paddingHorizontal: 8, paddingBottom: 4 },
+  zenExit: { position: "absolute", right: 12, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, opacity: 0.92 },
+  zenExitText: { fontFamily: mono, fontSize: 11 },
+  toolbarStrip: { borderBottomWidth: 1, height: 18, justifyContent: "center" },
+  toolbarStripPress: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, height: 18 },
+  toolbarStripText: { fontFamily: "Inter_500Medium", fontSize: 10 },
+  iconButton: { alignItems: "center", justifyContent: "center", minHeight: 26, minWidth: 26, paddingHorizontal: 4 },
+  iconButtonWithLabel: { minWidth: 52, paddingHorizontal: 6, paddingVertical: 2 },
+  iconButtonLabel: { fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 2, maxWidth: 64, textAlign: "center" },
+  tooltipBubble: { position: "absolute", alignSelf: "center", left: 24, right: 24, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, alignItems: "center" },
+  tooltipText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  tabsList: { paddingHorizontal: 4 },
+  tabsScroller: { flexGrow: 0, maxHeight: 28, borderBottomWidth: 1 },
+  documentTab: { maxWidth: 180, borderWidth: 1, marginRight: 2, marginTop: 2, flexDirection: "row", alignItems: "center" },
+  documentTabBody: { paddingLeft: 10, paddingRight: 4, paddingVertical: 4, justifyContent: "center" },
+  documentTabTitle: { fontSize: 11, maxWidth: 130 },
+  documentTabClose: { paddingHorizontal: 6, paddingVertical: 4, marginRight: 2 },
+  tabsListBtn: { paddingHorizontal: 8, alignItems: "center", justifyContent: "center", borderLeftWidth: 1 },
+  tabsListBar: { marginHorizontal: 6, marginTop: 4, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 8 },
+  tabsListBarTitle: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 12 },
+  tabsListBarCount: { fontFamily: mono, fontSize: 10 },
+  docListRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, paddingVertical: 6, paddingHorizontal: 4, marginBottom: 4 },
+  docListMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  docListTitle: { fontFamily: "Inter_500Medium", fontSize: 13 },
+  docListMeta: { fontFamily: mono, fontSize: 10, marginTop: 2 },
+  docListAction: { paddingHorizontal: 8, paddingVertical: 6 },
+  docListNew: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, marginTop: 6 },
+  errorText: { fontFamily: "Inter_500Medium", fontSize: 11, paddingHorizontal: 8, paddingVertical: 4 },
+  editorShell: { flex: 1, borderTopWidth: 1, borderBottomWidth: 1 },
+  fileHeader: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 6, flexDirection: "row", alignItems: "center" },
+  fileTitleInput: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 12, paddingVertical: 0 },
+  languageButton: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, flexDirection: "row", alignItems: "center", gap: 4 },
+  languageButtonText: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  findPanel: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 4 },
+  findBar: { minHeight: 28, flexDirection: "row", alignItems: "center", gap: 6 },
+  findInput: { flex: 1, fontFamily: mono, fontSize: 12, paddingVertical: 4, paddingHorizontal: 4, borderWidth: 1 },
+  findCount: { fontFamily: mono, fontSize: 11, minWidth: 22, textAlign: "right" },
+  caseToggle: { paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1 },
+  caseToggleText: { fontFamily: "Inter_700Bold", fontSize: 10 },
+  replaceButton: { paddingHorizontal: 8, paddingVertical: 4 },
+  replaceButtonText: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  editorScroll: { flex: 1 },
+  editorScrollContent: { minHeight: "100%" },
+  editorRow: { flexDirection: "row", minHeight: 360 },
+  gutter: { borderRightWidth: 1, paddingHorizontal: 6, paddingTop: 8, alignItems: "flex-end", minWidth: 40 },
+  gutterText: { fontFamily: mono, fontSize: 12, lineHeight: 18 },
+  editorInput: { flex: 1, minHeight: 360, padding: 8, fontFamily: mono, fontSize: 13, lineHeight: 18 },
+  syntaxPreview: { marginHorizontal: 0, marginTop: 0, borderTopWidth: 1, padding: 8, gap: 0 },
+  syntaxTitle: { fontFamily: "Inter_500Medium", fontSize: 10, marginBottom: 4, opacity: 0.7 },
+  syntaxPreviewLine: { flexDirection: "row", gap: 6 },
+  syntaxLineNumber: { fontFamily: mono, minWidth: 24, textAlign: "right", fontSize: 11, lineHeight: 16 },
+  syntaxLine: { fontFamily: mono, fontSize: 11, lineHeight: 16 },
+  matchesPanel: { borderTopWidth: 1, paddingHorizontal: 8, paddingVertical: 4, gap: 2 },
+  matchLine: { fontFamily: mono, fontSize: 11 },
+  compareWorkspace: { flex: 1 },
+  compareToolbar: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 4 },
+  compareSummary: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  compareSelector: { gap: 4, paddingRight: 4 },
+  compareDocPill: { borderWidth: 1, paddingHorizontal: 6, paddingVertical: 3, maxWidth: 145 },
+  compareDocText: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  comparePane: { flex: 1, borderBottomWidth: 1 },
+  comparePaneHeader: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 3 },
+  comparePaneTitle: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  compareScroll: { flex: 1 },
+  compareLine: { flexDirection: "row", alignItems: "flex-start", minHeight: 18, borderBottomWidth: StyleSheet.hairlineWidth },
+  compareMarker: { fontFamily: mono, width: 16, textAlign: "center", fontSize: 11, lineHeight: 16 },
+  compareLineNo: { fontFamily: mono, width: 30, textAlign: "right", paddingRight: 4, fontSize: 11, lineHeight: 16 },
+  compareCodeCell: { flex: 1, paddingRight: 4 },
+  compareEmpty: { margin: 8, padding: 8, gap: 2 },
+  compareEmptyTitle: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  compareEmptyText: { fontFamily: "Inter_500Medium", fontSize: 11, lineHeight: 16 },
+  statusBar: { borderTopWidth: 1, minHeight: 22, paddingHorizontal: 6, flexDirection: "row", alignItems: "center", gap: 6 },
+  statusSep: { width: 1, height: 12 },
+  statusSpacer: { flex: 1 },
+  statusText: { fontFamily: mono, fontSize: 11 },
+  menuBar: { flexDirection: "row", alignItems: "stretch", borderBottomWidth: 1, paddingHorizontal: 2, height: 24 },
+  menuItem: { paddingHorizontal: 8, justifyContent: "center", height: 22, marginVertical: 1 },
+  menuItemText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  menuOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
+  menuDropdown: { position: "absolute", top: 50, minWidth: 220, borderWidth: 1, paddingVertical: 4 },
+  dropdownItem: { paddingHorizontal: 8, paddingVertical: 6, gap: 1 },
+  dropdownItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  dropdownCheck: { fontFamily: mono, fontSize: 12, width: 12, textAlign: "center" },
+  dropdownLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  dropdownHint: { fontFamily: "Inter_400Regular", fontSize: 10 },
+  dropdownSeparator: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
+  modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },
+  modalTitle: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 13 },
+  modalClose: { width: 20, height: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  modalCloseText: { fontFamily: "Inter_700Bold", fontSize: 14, lineHeight: 14 },
+  modalBody: { padding: 12, gap: 6 },
+  modalSection: { fontFamily: "Inter_700Bold", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.6 },
+  modalNote: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 8 },
+  prefRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 8, borderWidth: 1 },
+  radio: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  radioDot: { width: 6, height: 6, borderRadius: 3 },
+  prefRowLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  prefRowHint: { fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 1 },
+  aboutBig: { fontFamily: "Inter_700Bold", fontSize: 16, marginBottom: 4 },
+  aboutText: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
+  mousePointer: { position: "absolute", width: 36, height: 36, alignItems: "center", justifyContent: "center", zIndex: 200 },
+  mousePointerDot: { position: "absolute", width: 4, height: 4, borderRadius: 2, top: 14, left: 14 },
+  clickRipple: { position: "absolute", width: 36, height: 36, borderRadius: 18, borderWidth: 2, zIndex: 199 },
+  trackpadCard: { position: "absolute", left: 12, right: 12, bottom: 16, borderWidth: 2, zIndex: 201 },
+  trackpadHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
+  trackpadHeaderText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 11 },
+  trackpadClose: { padding: 4 },
+  trackpadSurface: { height: 180, borderTopWidth: 1, borderBottomWidth: 1, alignItems: "center", justifyContent: "center", position: "relative" },
+  trackpadHint: { fontFamily: mono, fontSize: 12, opacity: 0.55, textAlign: "center" },
+  trackpadHintSub: { fontFamily: mono, fontSize: 10, opacity: 0.4, textAlign: "center", marginTop: 4 },
+  trackpadGrid: { ...StyleSheet.absoluteFillObject, opacity: 0.08 },
+  trackpadFinger: { position: "absolute", width: 38, height: 38, borderRadius: 19, borderWidth: 2 },
+  trackpadButtons: { flexDirection: "row", padding: 8, gap: 8 },
+  trackpadClick: { flex: 1, paddingVertical: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  trackpadClickText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  mousePad: { position: "absolute", right: 12, bottom: 24, padding: 4, borderWidth: 1, gap: 3, zIndex: 201 },
+  mousePadRow: { flexDirection: "row", gap: 3 },
+  mousePadCell: { width: 28, height: 28 },
+  mousePadKey: { width: 28, height: 28, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  mousePadClick: { width: 28, height: 28, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  mousePadClickText: { fontFamily: "Inter_700Bold", fontSize: 9 },
+});
+
       </View>
     </MouseContext.Provider>
   );
