@@ -24,6 +24,10 @@ interface NotesContextValue {
   updateActiveNote: (updates: Partial<Pick<NoteDocument, "title" | "body" | "language">>) => void;
   deleteActiveNote: () => void;
   duplicateActiveNote: () => void;
+  deleteNote: (id: string) => void;
+  closeOthers: (keepId: string) => void;
+  renameNote: (id: string, title: string) => void;
+  duplicateNote: (id: string) => void;
 }
 
 const storageKey = "pocketpad-notes-v1";
@@ -147,6 +151,51 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const deleteNote = (id: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setNotes((current) => {
+      if (current.length === 1 && current[0].id === id) {
+        const reset = { ...starterNote, id: makeId(), createdAt: Date.now(), updatedAt: Date.now() };
+        setActiveIdState(reset.id);
+        return [reset];
+      }
+      const next = current.filter((note) => note.id !== id);
+      setActiveIdState((curActive) => (curActive === id ? next[0].id : curActive));
+      return next;
+    });
+  };
+
+  const closeOthers = (keepId: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setNotes((current) => {
+      const keep = current.find((note) => note.id === keepId);
+      if (!keep) return current;
+      setActiveIdState(keep.id);
+      return [keep];
+    });
+  };
+
+  const renameNote = (id: string, title: string) => {
+    const safe = title.trim().length === 0 ? "untitled.txt" : title;
+    setNotes((current) => current.map((note) => (note.id === id ? { ...note, title: safe, updatedAt: Date.now() } : note)));
+  };
+
+  const duplicateNote = (id: string) => {
+    const source = notes.find((note) => note.id === id);
+    if (!source) return;
+    const now = Date.now();
+    const copy: NoteDocument = {
+      ...source,
+      id: makeId(),
+      title: source.title.replace(/(\.[^.]+)?$/, " copy$1"),
+      createdAt: now,
+      updatedAt: now,
+    };
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setNotes((current) => [copy, ...current]);
+    setActiveIdState(copy.id);
+  };
+
   const duplicateActiveNote = () => {
     const now = Date.now();
     const copy: NoteDocument = {
@@ -173,6 +222,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       updateActiveNote,
       deleteActiveNote,
       duplicateActiveNote,
+      deleteNote,
+      closeOthers,
+      renameNote,
+      duplicateNote,
     }),
     [activeId, activeNote, isLoaded, notes],
   );

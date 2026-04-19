@@ -89,11 +89,12 @@ const MouseOverlay = React.memo(function MouseOverlay({ targetsRef, palette, col
   const [pos, setPos] = useState({ x: Math.round(screen.width / 2), y: Math.round(screen.height / 2) });
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(null);
   const [moved, setMoved] = useState(false);
+  const [finger, setFinger] = useState<{ x: number; y: number } | null>(null);
   const posRef = useRef(pos);
   posRef.current = pos;
   const lastRef = useRef({ x: 0, y: 0 });
   const movedRef = useRef(false);
-  const SENS = 1.6;
+  const SENS = 1.8;
   const fireClickAt = useCallback((x: number, y: number) => {
     setRipple({ x, y, key: Date.now() });
     Haptics.selectionAsync();
@@ -108,25 +109,33 @@ const MouseOverlay = React.memo(function MouseOverlay({ targetsRef, palette, col
   const trackpad = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => { lastRef.current = { x: 0, y: 0 }; movedRef.current = false; setMoved(false); },
-    onPanResponderMove: (_e, g) => {
+    onPanResponderGrant: (e) => {
+      lastRef.current = { x: 0, y: 0 };
+      movedRef.current = false;
+      setMoved(false);
+      setFinger({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY });
+    },
+    onPanResponderMove: (e, g) => {
       const ddx = (g.dx - lastRef.current.x) * SENS;
       const ddy = (g.dy - lastRef.current.y) * SENS;
       lastRef.current = { x: g.dx, y: g.dy };
       if (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4) {
         if (!movedRef.current) { movedRef.current = true; setMoved(true); }
       }
+      setFinger({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY });
       setPos((c) => {
         const w = Dimensions.get("window");
         return { x: Math.max(0, Math.min(w.width - 1, c.x + ddx)), y: Math.max(0, Math.min(w.height - 1, c.y + ddy)) };
       });
     },
     onPanResponderRelease: (_e, g) => {
+      setFinger(null);
       if (!movedRef.current && Math.abs(g.dx) < 4 && Math.abs(g.dy) < 4) {
         const p = posRef.current;
         fireClickAt(p.x, p.y);
       }
     },
+    onPanResponderTerminate: () => { setFinger(null); },
   }), [fireClickAt]);
   useEffect(() => {
     if (!ripple) return;
@@ -140,20 +149,39 @@ const MouseOverlay = React.memo(function MouseOverlay({ targetsRef, palette, col
         <Feather name="navigation" size={26} color={colors.primary} style={{ transform: [{ rotate: "-30deg" }] }} />
         <View style={[styles.mousePointerDot, { backgroundColor: colors.primary }]} />
       </View>
-      <View style={[styles.trackpadCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden" }]}>
+      <View style={[styles.trackpadCard, { backgroundColor: colors.card, borderColor: colors.primary, borderRadius: radius, overflow: "hidden" }]}>
         <LinearGradient colors={palette.titleGradient} style={styles.trackpadHeader} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
-          <Feather name="mouse-pointer" size={11} color={colors.primaryForeground} />
-          <Text style={[styles.trackpadHeaderText, { color: colors.primaryForeground }]} numberOfLines={1}>Trackpad — drag to move, tap to click</Text>
-          <Pressable onPress={onClose} style={styles.trackpadClose} testID="mouse-close">
-            <Feather name="x" size={12} color={colors.primaryForeground} />
+          <Feather name="mouse-pointer" size={12} color={colors.primaryForeground} />
+          <Text style={[styles.trackpadHeaderText, { color: colors.primaryForeground }]} numberOfLines={1}>Trackpad · drag here, pointer moves above</Text>
+          <Pressable onPress={onClose} style={styles.trackpadClose} testID="mouse-close" hitSlop={8}>
+            <Feather name="x" size={14} color={colors.primaryForeground} />
           </Pressable>
         </LinearGradient>
         <View {...trackpad.panHandlers} style={[styles.trackpadSurface, { backgroundColor: colors.muted, borderColor: colors.border }]} testID="trackpad-surface">
-          <Text style={[styles.trackpadHint, { color: colors.mutedForeground }]}>{moved ? "" : "drag · tap"}</Text>
+          <View pointerEvents="none" style={styles.trackpadGrid}>
+            {[0.25, 0.5, 0.75].map((f) => (
+              <View key={`h${f}`} style={{ position: "absolute", left: 0, right: 0, top: `${f * 100}%`, height: 1, backgroundColor: colors.foreground }} />
+            ))}
+            {[0.25, 0.5, 0.75].map((f) => (
+              <View key={`v${f}`} style={{ position: "absolute", top: 0, bottom: 0, left: `${f * 100}%`, width: 1, backgroundColor: colors.foreground }} />
+            ))}
+          </View>
+          {finger ? (
+            <View pointerEvents="none" style={[styles.trackpadFinger, { left: finger.x - 19, top: finger.y - 19, borderColor: colors.primary, backgroundColor: colors.primary + "33" }]} />
+          ) : (
+            <View>
+              <Text style={[styles.trackpadHint, { color: colors.mutedForeground }]}>Drag anywhere here to move the pointer</Text>
+              <Text style={[styles.trackpadHintSub, { color: colors.mutedForeground }]}>Tap = click at pointer · finger stays here</Text>
+            </View>
+          )}
         </View>
         <View style={styles.trackpadButtons}>
           <Pressable onPress={() => fireClickAt(posRef.current.x, posRef.current.y)} style={({ pressed }) => [styles.trackpadClick, { backgroundColor: colors.primary, borderColor: colors.border, borderRadius: Math.min(radius, 4), opacity: pressed ? 0.75 : 1 }]} testID="trackpad-click">
-            <Text style={[styles.trackpadClickText, { color: colors.primaryForeground }]}>Click</Text>
+            <Feather name="mouse-pointer" size={12} color={colors.primaryForeground} />
+            <Text style={[styles.trackpadClickText, { color: colors.primaryForeground, marginLeft: 6 }]}>Click at pointer</Text>
+          </Pressable>
+          <Pressable onPress={onClose} style={({ pressed }) => [styles.trackpadClick, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4), opacity: pressed ? 0.75 : 1, flex: 0, paddingHorizontal: 14 }]} testID="trackpad-close-btn">
+            <Text style={[styles.trackpadClickText, { color: colors.foreground }]}>Hide</Text>
           </Pressable>
         </View>
       </View>
@@ -314,16 +342,21 @@ function IconButton({ id, icon, onPress, color, disabled }: { id: string; icon: 
   );
 }
 
-function DocumentTab({ item, active }: { item: NoteDocument; active: boolean }) {
+function DocumentTab({ item, active, onLongPress }: { item: NoteDocument; active: boolean; onLongPress: (id: string) => void }) {
   const colors = useColors();
   const { radius } = useTheme();
-  const { setActiveId } = useNotes();
+  const { setActiveId, deleteNote } = useNotes();
   return (
-    <MTarget id={`tab-${item.id}`} onPress={() => setActiveId(item.id)}>
-      <Pressable onPress={() => setActiveId(item.id)} style={({ pressed }) => [styles.documentTab, { backgroundColor: active ? colors.editorBackground : colors.muted, borderColor: colors.border, borderTopLeftRadius: radius, borderTopRightRadius: radius, borderBottomColor: active ? colors.editorBackground : colors.border, opacity: pressed ? 0.85 : 1 }]} testID={`note-tab-${item.id}`}>
-        <Text numberOfLines={1} style={[styles.documentTabTitle, { color: colors.foreground, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium" }]}>{item.title}</Text>
+    <View style={[styles.documentTab, { backgroundColor: active ? colors.editorBackground : colors.muted, borderColor: colors.border, borderTopLeftRadius: radius, borderTopRightRadius: radius, borderBottomColor: active ? colors.editorBackground : colors.border }]}>
+      <MTarget id={`tab-${item.id}`} onPress={() => setActiveId(item.id)}>
+        <Pressable onPress={() => setActiveId(item.id)} onLongPress={() => onLongPress(item.id)} delayLongPress={350} style={({ pressed }) => [styles.documentTabBody, { opacity: pressed ? 0.7 : 1 }]} testID={`note-tab-${item.id}`} accessibilityRole="button" accessibilityLabel={`Document ${item.title}, long press for options`}>
+          <Text numberOfLines={1} style={[styles.documentTabTitle, { color: colors.foreground, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium" }]}>{item.title}</Text>
+        </Pressable>
+      </MTarget>
+      <Pressable onPress={() => deleteNote(item.id)} hitSlop={8} style={({ pressed }) => [styles.documentTabClose, { opacity: pressed ? 0.5 : 1 }]} testID={`note-tab-close-${item.id}`} accessibilityRole="button" accessibilityLabel={`Close ${item.title}`}>
+        <Feather name="x" size={12} color={colors.mutedForeground} />
       </Pressable>
-    </MTarget>
+    </View>
   );
 }
 
@@ -387,8 +420,12 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, palette, radius } = useTheme();
-  const { notes, activeNote, activeId, isLoaded, createNote, importNote, updateActiveNote, deleteActiveNote, duplicateActiveNote } = useNotes();
+  const { preference, setPreference, tabsLayout, setTabsLayout, palette, radius } = useTheme();
+  const { notes, activeNote, activeId, isLoaded, createNote, importNote, updateActiveNote, deleteActiveNote, duplicateActiveNote, deleteNote, closeOthers, renameNote, duplicateNote, setActiveId } = useNotes();
+  const [tabMenuId, setTabMenuId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
+  const [tabListOpen, setTabListOpen] = useState(false);
+  const tabMenuNote = notes.find((n) => n.id === tabMenuId) ?? null;
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -786,7 +823,21 @@ export default function NotepadScreen() {
           ) : null}
 
           {!zenMode ? (
-            <FlatList horizontal data={notes} keyExtractor={(item) => item.id} renderItem={({ item }) => <DocumentTab item={item} active={item.id === activeId} />} style={[styles.tabsScroller, { backgroundColor: colors.background, borderColor: colors.border }]} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsList} scrollEnabled={notes.length > 0} />
+            tabsLayout === "tabs" ? (
+              <View style={[styles.tabsScroller, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: "row" }]}>
+                <FlatList horizontal data={notes} keyExtractor={(item) => item.id} renderItem={({ item }) => <DocumentTab item={item} active={item.id === activeId} onLongPress={(id) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setTabMenuId(id); }} />} style={{ flex: 1 }} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsList} scrollEnabled={notes.length > 0} />
+                <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBtn, { borderLeftColor: colors.border }]} testID="tabs-list-button">
+                  <Feather name="list" size={13} color={colors.foreground} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBar, { backgroundColor: colors.background, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="tabs-list-bar">
+                <Feather name="folder" size={12} color={colors.mutedForeground} />
+                <Text numberOfLines={1} style={[styles.tabsListBarTitle, { color: colors.foreground }]}>{activeNote.title}</Text>
+                <Text style={[styles.tabsListBarCount, { color: colors.mutedForeground }]}>{notes.length} open</Text>
+                <Feather name="chevron-down" size={12} color={colors.mutedForeground} />
+              </Pressable>
+            )
           ) : null}
 
           {importError ? <Text style={[styles.errorText, { color: colors.destructive, backgroundColor: colors.card }]}>{importError}</Text> : null}
@@ -932,6 +983,93 @@ export default function NotepadScreen() {
           <MouseOverlay targetsRef={mouseTargetsRef} palette={palette} colors={colors} radius={radius} onClose={() => setMouseOn(false)} />
         ) : null}
 
+        <Modal visible={tabMenuId !== null} transparent animationType="fade" onRequestClose={() => setTabMenuId(null)}>
+          <Pressable onPress={() => setTabMenuId(null)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+            <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden", maxWidth: 320 }]}>
+              <View style={[styles.modalHeader, { borderColor: colors.border }]}>
+                <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <Text numberOfLines={1} style={[styles.modalTitle, { color: colors.primaryForeground }]}>{tabMenuNote?.title ?? "Document"}</Text>
+                <Pressable onPress={() => setTabMenuId(null)} style={[styles.modalClose, { borderColor: colors.primaryForeground }]} testID="tab-menu-close">
+                  <Text style={[styles.modalCloseText, { color: colors.primaryForeground }]}>×</Text>
+                </Pressable>
+              </View>
+              <View style={styles.modalBody}>
+                <DropdownItem label="Switch to" onPress={() => { if (tabMenuId) setActiveId(tabMenuId); setTabMenuId(null); }} />
+                <DropdownItem label="Rename" onPress={() => { if (tabMenuNote) setRenameTarget({ id: tabMenuNote.id, title: tabMenuNote.title }); setTabMenuId(null); }} />
+                <DropdownItem label="Duplicate" onPress={() => { if (tabMenuId) duplicateNote(tabMenuId); setTabMenuId(null); }} />
+                <DropdownSeparator />
+                <DropdownItem label="Close" onPress={() => { if (tabMenuId) deleteNote(tabMenuId); setTabMenuId(null); }} />
+                <DropdownItem label="Close others" onPress={() => { if (tabMenuId) closeOthers(tabMenuId); setTabMenuId(null); }} />
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={tabListOpen} transparent animationType="fade" onRequestClose={() => setTabListOpen(false)}>
+          <Pressable onPress={() => setTabListOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+            <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden" }]}>
+              <View style={[styles.modalHeader, { borderColor: colors.border }]}>
+                <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <Text style={[styles.modalTitle, { color: colors.primaryForeground }]}>Open documents</Text>
+                <Pressable onPress={() => setTabListOpen(false)} style={[styles.modalClose, { borderColor: colors.primaryForeground }]} testID="tab-list-close">
+                  <Text style={[styles.modalCloseText, { color: colors.primaryForeground }]}>×</Text>
+                </Pressable>
+              </View>
+              <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={styles.modalBody}>
+                {notes.map((note) => {
+                  const selected = note.id === activeId;
+                  return (
+                    <View key={note.id} style={[styles.docListRow, { borderColor: colors.border, borderRadius: Math.min(radius, 4), backgroundColor: selected ? colors.primary : "transparent" }]}>
+                      <Pressable onPress={() => { setActiveId(note.id); setTabListOpen(false); }} onLongPress={() => { setTabListOpen(false); setTabMenuId(note.id); }} delayLongPress={350} style={styles.docListMain} testID={`doc-list-${note.id}`}>
+                        <Feather name="file-text" size={13} color={selected ? colors.primaryForeground : colors.mutedForeground} />
+                        <View style={{ flex: 1 }}>
+                          <Text numberOfLines={1} style={[styles.docListTitle, { color: selected ? colors.primaryForeground : colors.foreground }]}>{note.title}</Text>
+                          <Text numberOfLines={1} style={[styles.docListMeta, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{note.language} · {note.body.length} chars</Text>
+                        </View>
+                      </Pressable>
+                      <Pressable onPress={() => { setRenameTarget({ id: note.id, title: note.title }); setTabListOpen(false); }} hitSlop={6} style={styles.docListAction} testID={`doc-list-rename-${note.id}`}>
+                        <Feather name="edit-2" size={13} color={selected ? colors.primaryForeground : colors.mutedForeground} />
+                      </Pressable>
+                      <Pressable onPress={() => deleteNote(note.id)} hitSlop={6} style={styles.docListAction} testID={`doc-list-close-${note.id}`}>
+                        <Feather name="x" size={14} color={selected ? colors.primaryForeground : colors.mutedForeground} />
+                      </Pressable>
+                    </View>
+                  );
+                })}
+                <Pressable onPress={() => { createNote(); setTabListOpen(false); }} style={({ pressed }) => [styles.docListNew, { backgroundColor: pressed ? colors.secondary : colors.muted, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="doc-list-new">
+                  <Feather name="file-plus" size={13} color={colors.foreground} />
+                  <Text style={[styles.docListTitle, { color: colors.foreground }]}>New document</Text>
+                </Pressable>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={renameTarget !== null} transparent animationType="fade" onRequestClose={() => setRenameTarget(null)}>
+          <Pressable onPress={() => setRenameTarget(null)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+            <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden", maxWidth: 320 }]}>
+              <View style={[styles.modalHeader, { borderColor: colors.border }]}>
+                <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <Text style={[styles.modalTitle, { color: colors.primaryForeground }]}>Rename document</Text>
+                <Pressable onPress={() => setRenameTarget(null)} style={[styles.modalClose, { borderColor: colors.primaryForeground }]} testID="rename-close">
+                  <Text style={[styles.modalCloseText, { color: colors.primaryForeground }]}>×</Text>
+                </Pressable>
+              </View>
+              <View style={styles.modalBody}>
+                <TextInput value={renameTarget?.title ?? ""} onChangeText={(t) => setRenameTarget((c) => (c ? { ...c, title: t } : c))} autoFocus style={[styles.findInput, { color: colors.foreground, borderColor: colors.border, borderRadius: Math.min(radius, 4), paddingHorizontal: 8, paddingVertical: 8 }]} placeholder="filename.txt" placeholderTextColor={colors.mutedForeground} testID="rename-input" />
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                  <Pressable onPress={() => setRenameTarget(null)} style={({ pressed }) => [styles.replaceButton, { flex: 1, backgroundColor: colors.muted, borderRadius: Math.min(radius, 4), opacity: pressed ? 0.7 : 1 }]}>
+                    <Text style={[styles.replaceButtonText, { color: colors.foreground }]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable onPress={() => { if (renameTarget) renameNote(renameTarget.id, renameTarget.title); setRenameTarget(null); }} style={({ pressed }) => [styles.replaceButton, { flex: 1, backgroundColor: colors.primary, borderRadius: Math.min(radius, 4), opacity: pressed ? 0.7 : 1 }]} testID="rename-save">
+                    <Text style={[styles.replaceButtonText, { color: colors.primaryForeground }]}>Rename</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         <Modal visible={langOpen} transparent animationType="fade" onRequestClose={() => setLangOpen(false)}>
           <Pressable onPress={() => setLangOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
             <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden" }]}>
@@ -981,6 +1119,21 @@ export default function NotepadScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{choice.label}</Text>
                         <Text style={[styles.prefRowHint, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{choice.hint}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Document tabs</Text>
+                {([{ id: "tabs" as const, label: "Tabs", hint: "Notepad++ style row of tabs" }, { id: "list" as const, label: "Dropdown list", hint: "One bar that opens a list of open documents" }]).map((opt) => {
+                  const selected = tabsLayout === opt.id;
+                  return (
+                    <Pressable key={opt.id} onPress={() => setTabsLayout(opt.id)} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID={`tabs-layout-${opt.id}`}>
+                      <View style={[styles.radio, { borderColor: selected ? colors.primaryForeground : colors.foreground }]}>
+                        {selected ? <View style={[styles.radioDot, { backgroundColor: colors.primaryForeground }]} /> : null}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{opt.label}</Text>
+                        <Text style={[styles.prefRowHint, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{opt.hint}</Text>
                       </View>
                     </Pressable>
                   );
@@ -1039,8 +1192,20 @@ const styles = StyleSheet.create({
   iconButton: { alignItems: "center", justifyContent: "center", minHeight: 26, minWidth: 26, paddingHorizontal: 4 },
   tabsList: { paddingHorizontal: 4 },
   tabsScroller: { flexGrow: 0, maxHeight: 28, borderBottomWidth: 1 },
-  documentTab: { maxWidth: 160, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, marginRight: 2, marginTop: 2, justifyContent: "center" },
-  documentTabTitle: { fontSize: 11 },
+  documentTab: { maxWidth: 180, borderWidth: 1, marginRight: 2, marginTop: 2, flexDirection: "row", alignItems: "center" },
+  documentTabBody: { paddingLeft: 10, paddingRight: 4, paddingVertical: 4, justifyContent: "center" },
+  documentTabTitle: { fontSize: 11, maxWidth: 130 },
+  documentTabClose: { paddingHorizontal: 6, paddingVertical: 4, marginRight: 2 },
+  tabsListBtn: { paddingHorizontal: 8, alignItems: "center", justifyContent: "center", borderLeftWidth: 1 },
+  tabsListBar: { marginHorizontal: 6, marginTop: 4, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 8 },
+  tabsListBarTitle: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 12 },
+  tabsListBarCount: { fontFamily: mono, fontSize: 10 },
+  docListRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, paddingVertical: 6, paddingHorizontal: 4, marginBottom: 4 },
+  docListMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  docListTitle: { fontFamily: "Inter_500Medium", fontSize: 13 },
+  docListMeta: { fontFamily: mono, fontSize: 10, marginTop: 2 },
+  docListAction: { paddingHorizontal: 8, paddingVertical: 6 },
+  docListNew: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, marginTop: 6 },
   errorText: { fontFamily: "Inter_500Medium", fontSize: 11, paddingHorizontal: 8, paddingVertical: 4 },
   editorShell: { flex: 1, borderTopWidth: 1, borderBottomWidth: 1 },
   fileHeader: { borderBottomWidth: 1, paddingHorizontal: 6, paddingVertical: 4, gap: 6, flexDirection: "row", alignItems: "center" },
@@ -1119,15 +1284,18 @@ const styles = StyleSheet.create({
   mousePointer: { position: "absolute", width: 36, height: 36, alignItems: "center", justifyContent: "center", zIndex: 200 },
   mousePointerDot: { position: "absolute", width: 4, height: 4, borderRadius: 2, top: 14, left: 14 },
   clickRipple: { position: "absolute", width: 36, height: 36, borderRadius: 18, borderWidth: 2, zIndex: 199 },
-  trackpadCard: { position: "absolute", right: 12, bottom: 24, width: 220, borderWidth: 1, zIndex: 201 },
-  trackpadHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 5 },
-  trackpadHeaderText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 10 },
-  trackpadClose: { padding: 2 },
-  trackpadSurface: { height: 130, borderTopWidth: 1, borderBottomWidth: 1, alignItems: "center", justifyContent: "center" },
-  trackpadHint: { fontFamily: mono, fontSize: 11, opacity: 0.6 },
-  trackpadButtons: { flexDirection: "row", padding: 6 },
-  trackpadClick: { flex: 1, paddingVertical: 8, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  trackpadClickText: { fontFamily: "Inter_700Bold", fontSize: 11 },
+  trackpadCard: { position: "absolute", left: 12, right: 12, bottom: 16, borderWidth: 2, zIndex: 201 },
+  trackpadHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
+  trackpadHeaderText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 11 },
+  trackpadClose: { padding: 4 },
+  trackpadSurface: { height: 180, borderTopWidth: 1, borderBottomWidth: 1, alignItems: "center", justifyContent: "center", position: "relative" },
+  trackpadHint: { fontFamily: mono, fontSize: 12, opacity: 0.55, textAlign: "center" },
+  trackpadHintSub: { fontFamily: mono, fontSize: 10, opacity: 0.4, textAlign: "center", marginTop: 4 },
+  trackpadGrid: { ...StyleSheet.absoluteFillObject, opacity: 0.08 },
+  trackpadFinger: { position: "absolute", width: 38, height: 38, borderRadius: 19, borderWidth: 2 },
+  trackpadButtons: { flexDirection: "row", padding: 8, gap: 8 },
+  trackpadClick: { flex: 1, paddingVertical: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  trackpadClickText: { fontFamily: "Inter_700Bold", fontSize: 12 },
   mousePad: { position: "absolute", right: 12, bottom: 24, padding: 4, borderWidth: 1, gap: 3, zIndex: 201 },
   mousePadRow: { flexDirection: "row", gap: 3 },
   mousePadCell: { width: 28, height: 28 },
