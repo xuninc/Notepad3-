@@ -2,13 +2,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
+export type NoteLanguage = "Plain" | "Markdown" | "Assembly" | "JavaScript" | "Python" | "Web" | "JSON";
+
 export interface NoteDocument {
   id: string;
   title: string;
   body: string;
   createdAt: number;
   updatedAt: number;
-  language: "Plain" | "Markdown" | "Code";
+  language: NoteLanguage;
 }
 
 interface NotesContextValue {
@@ -18,6 +20,7 @@ interface NotesContextValue {
   isLoaded: boolean;
   setActiveId: (id: string) => void;
   createNote: () => void;
+  importNote: (title: string, body: string, language?: NoteLanguage) => void;
   updateActiveNote: (updates: Partial<Pick<NoteDocument, "title" | "body" | "language">>) => void;
   deleteActiveNote: () => void;
   duplicateActiveNote: () => void;
@@ -28,7 +31,7 @@ const storageKey = "pocketpad-notes-v1";
 const starterNote: NoteDocument = {
   id: "welcome",
   title: "scratchpad.txt",
-  body: "Welcome to PocketPad++\n\nA fast iPhone notepad for serious text work.\n\nTry this:\n- Create multiple documents\n- Search within a file\n- Toggle the document type\n- Watch line, word, and character counts update live\n\nEverything autosaves locally on this device.",
+  body: "Welcome to PocketPad++\n\nA fast iPhone notepad for serious text work.\n\nTry this:\n- Import files from the Files app\n- Compare two documents top and bottom\n- Switch to Assembly or code mode for syntax coloring\n- Use line tools without leaving the editor\n\nEverything autosaves locally on this device.",
   createdAt: Date.now(),
   updatedAt: Date.now(),
   language: "Plain",
@@ -57,9 +60,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         if (stored) {
           const parsed = JSON.parse(stored) as { notes: NoteDocument[]; activeId?: string };
-          if (parsed.notes.length > 0) {
-            setNotes(parsed.notes);
-            setActiveIdState(parsed.activeId && parsed.notes.some((note) => note.id === parsed.activeId) ? parsed.activeId : parsed.notes[0].id);
+          const migrated = parsed.notes.map((note) => ({ ...note, language: normalizeLanguage(note.language) }));
+          if (migrated.length > 0) {
+            setNotes(migrated);
+            setActiveIdState(parsed.activeId && migrated.some((note) => note.id === parsed.activeId) ? parsed.activeId : migrated[0].id);
           }
         }
       })
@@ -98,6 +102,21 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setActiveIdState(note.id);
   };
 
+  const importNote = (title: string, body: string, language: NoteLanguage = "Plain") => {
+    const now = Date.now();
+    const note: NoteDocument = {
+      id: makeId(),
+      title,
+      body,
+      createdAt: now,
+      updatedAt: now,
+      language,
+    };
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setNotes((current) => [note, ...current]);
+    setActiveIdState(note.id);
+  };
+
   const updateActiveNote = (updates: Partial<Pick<NoteDocument, "title" | "body" | "language">>) => {
     setNotes((current) =>
       current.map((note) =>
@@ -105,6 +124,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           ? {
               ...note,
               ...updates,
+              language: updates.language ? normalizeLanguage(updates.language) : note.language,
               title: updates.title !== undefined && updates.title.trim().length === 0 ? "untitled.txt" : updates.title ?? note.title,
               updatedAt: Date.now(),
             }
@@ -149,6 +169,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isLoaded,
       setActiveId,
       createNote,
+      importNote,
       updateActiveNote,
       deleteActiveNote,
       duplicateActiveNote,
@@ -157,6 +178,25 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   );
 
   return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;
+}
+
+export function normalizeLanguage(language: unknown): NoteLanguage {
+  if (language === "Code") return "JavaScript";
+  if (language === "Plain" || language === "Markdown" || language === "Assembly" || language === "JavaScript" || language === "Python" || language === "Web" || language === "JSON") {
+    return language;
+  }
+  return "Plain";
+}
+
+export function detectLanguageFromFileName(name: string): NoteLanguage {
+  const lower = name.toLowerCase();
+  if (/\.(asm|s|nasm|masm|inc)$/.test(lower)) return "Assembly";
+  if (/\.(md|markdown)$/.test(lower)) return "Markdown";
+  if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(lower)) return "JavaScript";
+  if (/\.(py|pyw)$/.test(lower)) return "Python";
+  if (/\.(html|htm|css|xml|svg)$/.test(lower)) return "Web";
+  if (/\.(json|jsonc)$/.test(lower)) return "JSON";
+  return "Plain";
 }
 
 export function useNotes() {
