@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -19,7 +20,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
+
+type ThemeChoice = { id: "classic" | "light" | "dark" | "system"; label: string };
+const themeChoices: ThemeChoice[] = [
+  { id: "classic", label: "Classic Windows" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "system", label: "Match system" },
+];
 
 type DiffStatus = "same" | "added" | "removed" | "changed";
 type DiffRow = { line: number; leftText: string; rightText: string; status: DiffStatus };
@@ -155,6 +165,25 @@ function SyntaxLine({ line, language, muted }: { line: string; language: NoteLan
   );
 }
 
+function DropdownItem({ label, hint, onPress, destructive }: { label: string; hint?: string; onPress: () => void; destructive?: boolean }) {
+  const colors = useColors();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.dropdownItem, { backgroundColor: pressed ? colors.primary : "transparent" }]}>
+      {({ pressed }) => (
+        <>
+          <Text style={[styles.dropdownLabel, { color: pressed ? colors.primaryForeground : destructive ? colors.destructive : colors.foreground }]}>{label}</Text>
+          {hint ? <Text style={[styles.dropdownHint, { color: pressed ? colors.primaryForeground : colors.mutedForeground }]}>{hint}</Text> : null}
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+function DropdownSeparator() {
+  const colors = useColors();
+  return <View style={[styles.dropdownSeparator, { backgroundColor: colors.border }]} />;
+}
+
 function IconButton({ icon, onPress, color, disabled }: { icon: keyof typeof Feather.glyphMap; onPress: () => void; color: string; disabled?: boolean }) {
   const colors = useColors();
   return (
@@ -241,9 +270,10 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
   );
 }
 
-export default function PocketPadScreen() {
+export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { preference, setPreference } = useTheme();
   const { notes, activeNote, activeId, isLoaded, createNote, importNote, updateActiveNote, deleteActiveNote, duplicateActiveNote } = useNotes();
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -255,6 +285,9 @@ export default function PocketPadScreen() {
   const [zenMode, setZenMode] = useState(false);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [importError, setImportError] = useState("");
+  const [openMenu, setOpenMenu] = useState<null | "file" | "edit" | "view" | "tools" | "help">(null);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const topCompareRef = useRef<ScrollView>(null);
   const bottomCompareRef = useRef<ScrollView>(null);
   const syncingRef = useRef(false);
@@ -351,8 +384,63 @@ export default function PocketPadScreen() {
         {!zenMode ? (
           <View style={[styles.titleBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="document-text-outline" size={13} color={colors.foreground} />
-            <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.foreground }]}>{activeNote.title} - PocketPad++</Text>
+            <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.foreground }]}>{activeNote.title} - Notepad 3++</Text>
           </View>
+        ) : null}
+
+        {!zenMode ? (
+          <View style={[styles.menuBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
+              <Pressable key={id} onPress={() => setOpenMenu((current) => (current === id ? null : id))} style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]} testID={`menu-${id}`}>
+                <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {openMenu ? (
+          <Pressable onPress={() => setOpenMenu(null)} style={styles.menuOverlay}>
+            <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, left: openMenu === "file" ? 0 : openMenu === "edit" ? 44 : openMenu === "view" ? 88 : openMenu === "tools" ? 132 : 176 }]}>
+              {openMenu === "file" ? (
+                <>
+                  <DropdownItem label="New" hint="Blank note" onPress={() => { createNote(); setOpenMenu(null); }} />
+                  <DropdownItem label="Open from Files..." onPress={() => { setOpenMenu(null); importFromFiles(); }} />
+                  <DropdownItem label="Duplicate" onPress={() => { duplicateActiveNote(); setOpenMenu(null); }} />
+                  <DropdownSeparator />
+                  <DropdownItem label="Delete" destructive onPress={() => { deleteActiveNote(); setOpenMenu(null); }} />
+                </>
+              ) : null}
+              {openMenu === "edit" ? (
+                <>
+                  <DropdownItem label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); setOpenMenu(null); }} />
+                  <DropdownItem label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); setOpenMenu(null); }} />
+                  <DropdownSeparator />
+                  <DropdownItem label="Insert timestamp" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setOpenMenu(null); }} />
+                  <DropdownItem label="Duplicate line" onPress={() => { duplicateCurrentLine(); setOpenMenu(null); }} />
+                  <DropdownItem label="Cut line" onPress={() => { deleteCurrentLine(); setOpenMenu(null); }} />
+                  <DropdownItem label="Sort lines" onPress={() => { sortLines(); setOpenMenu(null); }} />
+                  <DropdownItem label="Trim trailing spaces" onPress={() => { trimTrailingSpaces(); setOpenMenu(null); }} />
+                </>
+              ) : null}
+              {openMenu === "view" ? (
+                <>
+                  <DropdownItem label={zenMode ? "Exit zen mode" : "Zen mode"} onPress={() => { setZenMode((current) => !current); setOpenMenu(null); }} />
+                  <DropdownItem label={compareOpen ? "Hide compare pane" : "Compare documents"} onPress={() => { setCompareOpen((current) => !current); if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id); setOpenMenu(null); }} />
+                </>
+              ) : null}
+              {openMenu === "tools" ? (
+                <>
+                  <DropdownItem label="Preferences..." onPress={() => { setPrefsOpen(true); setOpenMenu(null); }} />
+                  <DropdownItem label={caseSensitive ? "Case sensitive: ON" : "Case sensitive: OFF"} onPress={() => { setCaseSensitive((current) => !current); setOpenMenu(null); }} />
+                </>
+              ) : null}
+              {openMenu === "help" ? (
+                <>
+                  <DropdownItem label="About Notepad 3++" onPress={() => { setAboutOpen(true); setOpenMenu(null); }} />
+                </>
+              ) : null}
+            </View>
+          </Pressable>
         ) : null}
 
         {!zenMode ? (
@@ -491,6 +579,53 @@ export default function PocketPadScreen() {
           <Text style={[styles.statusText, { color: colors.success }]}>saved {formatTime(activeNote.updatedAt)}</Text>
         </View>
       </View>
+
+      <Modal visible={prefsOpen} transparent animationType="fade" onRequestClose={() => setPrefsOpen(false)}>
+        <Pressable onPress={() => setPrefsOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+          <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { backgroundColor: colors.primary, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.primaryForeground }]}>Preferences</Text>
+              <Pressable onPress={() => setPrefsOpen(false)} style={[styles.modalClose, { borderColor: colors.primaryForeground }]} testID="prefs-close">
+                <Text style={[styles.modalCloseText, { color: colors.primaryForeground }]}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={[styles.modalSection, { color: colors.foreground }]}>Theme</Text>
+              {themeChoices.map((choice) => {
+                const selected = preference === choice.id;
+                return (
+                  <Pressable key={choice.id} onPress={() => setPreference(choice.id)} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border }]} testID={`theme-${choice.id}`}>
+                    <View style={[styles.radio, { borderColor: selected ? colors.primaryForeground : colors.foreground }]}>
+                      {selected ? <View style={[styles.radioDot, { backgroundColor: colors.primaryForeground }]} /> : null}
+                    </View>
+                    <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{choice.label}</Text>
+                  </Pressable>
+                );
+              })}
+              <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Choices are saved on this device.</Text>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={aboutOpen} transparent animationType="fade" onRequestClose={() => setAboutOpen(false)}>
+        <Pressable onPress={() => setAboutOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+          <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { backgroundColor: colors.primary, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.primaryForeground }]}>About Notepad 3++</Text>
+              <Pressable onPress={() => setAboutOpen(false)} style={[styles.modalClose, { borderColor: colors.primaryForeground }]} testID="about-close">
+                <Text style={[styles.modalCloseText, { color: colors.primaryForeground }]}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={[styles.aboutBig, { color: colors.foreground }]}>Notepad 3++</Text>
+              <Text style={[styles.aboutText, { color: colors.foreground }]}>A pocket text editor with the look of Notepad2 and the tools of Notepad++.</Text>
+              <Text style={[styles.aboutText, { color: colors.mutedForeground }]}>Multi-document tabs, find/replace, top-bottom diff, file import, line tools, and syntax coloring for Assembly, JavaScript, Python, Web, JSON, and Markdown.</Text>
+              <Text style={[styles.aboutText, { color: colors.mutedForeground }]}>Version 1.0.0</Text>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -564,4 +699,28 @@ const styles = StyleSheet.create({
   statusSep: { width: 1, height: 12 },
   statusSpacer: { flex: 1 },
   statusText: { fontFamily: mono, fontSize: 11 },
+  menuBar: { flexDirection: "row", alignItems: "stretch", borderBottomWidth: 1, paddingHorizontal: 2, height: 24 },
+  menuItem: { paddingHorizontal: 8, justifyContent: "center" },
+  menuItemText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  menuOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
+  menuDropdown: { position: "absolute", top: 48, minWidth: 200, borderWidth: 1, paddingVertical: 4 },
+  dropdownItem: { paddingHorizontal: 12, paddingVertical: 6, gap: 1 },
+  dropdownLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  dropdownHint: { fontFamily: "Inter_400Regular", fontSize: 10 },
+  dropdownSeparator: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  modalCard: { width: "100%", maxWidth: 360, borderWidth: 1 },
+  modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 24, borderBottomWidth: 1 },
+  modalTitle: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 12 },
+  modalClose: { width: 18, height: 18, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  modalCloseText: { fontFamily: "Inter_700Bold", fontSize: 14, lineHeight: 14 },
+  modalBody: { padding: 12, gap: 6 },
+  modalSection: { fontFamily: "Inter_700Bold", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.6 },
+  modalNote: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 8 },
+  prefRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 8, borderWidth: 1 },
+  radio: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  radioDot: { width: 6, height: 6, borderRadius: 3 },
+  prefRowLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  aboutBig: { fontFamily: "Inter_700Bold", fontSize: 16, marginBottom: 4 },
+  aboutText: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
 });

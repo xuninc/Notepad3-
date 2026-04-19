@@ -18,7 +18,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 ## Artifacts
 
-- **PocketPad++** (`artifacts/mobile`) — Expo iPhone Notepad2-style editor with local AsyncStorage persistence, file import from the device file manager, multi-document tabs, a line-numbered editor, find/replace with case-sensitive matching, top/bottom synced document comparison with traditional diff markers, language modes including Assembly/JavaScript/Python/Web/JSON, syntax-colored code previews and compare panes, line/word/character/cursor stats, autosave status, note duplication/deletion, and Notepad++-inspired line tools for timestamp insertion, duplicate line, cut line, sort lines, and trim trailing spaces.
+- **Notepad 3++** (`artifacts/mobile`) — Expo iPhone Notepad2-style editor with local AsyncStorage persistence, file import from the device file manager, multi-document tabs, a line-numbered editor, find/replace with case-sensitive matching, top/bottom synced document comparison with traditional diff markers, language modes including Assembly/JavaScript/Python/Web/JSON, syntax-colored code previews and compare panes, line/word/character/cursor stats, autosave status, note duplication/deletion, and Notepad++-inspired line tools for timestamp insertion, duplicate line, cut line, sort lines, and trim trailing spaces.
 
 ## Key Commands
 

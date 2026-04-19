@@ -31,7 +31,7 @@ const storageKey = "pocketpad-notes-v1";
 const starterNote: NoteDocument = {
   id: "welcome",
   title: "scratchpad.txt",
-  body: "Welcome to PocketPad++\n\nA fast iPhone notepad for serious text work.\n\nTry this:\n- Import files from the Files app\n- Compare two documents top and bottom\n- Switch to Assembly or code mode for syntax coloring\n- Use line tools without leaving the editor\n\nEverything autosaves locally on this device.",
+  body: "Welcome to Notepad 3++\n\nA fast iPhone text editor with the look of Notepad2 and the tools of Notepad++.\n\nTry this:\n- Open the menu bar above (File / Edit / View / Tools / Help)\n- Tools > Preferences to switch theme (Classic, Light, Dark, or Match system)\n- File > Open from Files... to import a file\n- View > Compare documents for a top/bottom diff\n- Edit > line tools without leaving the editor\n\nEverything autosaves locally on this device.",
   createdAt: Date.now(),
   updatedAt: Date.now(),
   language: "Plain",
