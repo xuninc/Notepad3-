@@ -789,13 +789,14 @@ export default function NotepadScreen() {
                     <DropdownItem label="Document tabs" checked={tabsLayout === "tabs"} onPress={() => { setTabsLayout("tabs"); setOpenMenu(null); }} />
                     <DropdownItem label="Document list" checked={tabsLayout === "list"} onPress={() => { setTabsLayout("list"); setOpenMenu(null); }} />
                     <DropdownSeparator />
-                    <DropdownItem label="Compare" checked={compareOpen} onPress={() => { toggleCompare(); setOpenMenu(null); }} />
                     <DropdownItem label="Zen mode" checked={zenMode} onPress={() => { setZenMode((current) => !current); setOpenMenu(null); }} />
-                    <DropdownItem label="Trackpad" hint="On-screen pointer" checked={mouseOn} onPress={() => { setMouseOn((current) => !current); setOpenMenu(null); }} />
                   </>
                 ) : null}
                 {openMenu === "tools" ? (
                   <>
+                    <DropdownItem label="Compare documents" hint="Top / bottom diff view" checked={compareOpen} onPress={() => { toggleCompare(); setOpenMenu(null); }} />
+                    <DropdownItem label="Trackpad" hint="On-screen pointer" checked={mouseOn} onPress={() => { setMouseOn((current) => !current); setOpenMenu(null); }} />
+                    <DropdownSeparator />
                     <DropdownItem label="Insert date" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setOpenMenu(null); }} />
                     <DropdownItem label="Duplicate line" onPress={() => { duplicateCurrentLine(); setOpenMenu(null); }} />
                     <DropdownItem label="Delete line" onPress={() => { deleteCurrentLine(); setOpenMenu(null); }} />
