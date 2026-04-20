@@ -159,9 +159,8 @@ const MouseOverlay = React.memo(function MouseOverlay({ targetsRef, palette, col
   return (
     <>
       {ripple ? <View pointerEvents="none" style={[styles.clickRipple, { left: ripple.x - 18, top: ripple.y - 18, borderColor: colors.primary }]} /> : null}
-      <View pointerEvents="none" style={[styles.mousePointer, { left: pos.x, top: pos.y }]}>
-        <Feather name="navigation" size={26} color={colors.primary} style={{ transform: [{ rotate: "-30deg" }] }} />
-        <View style={[styles.mousePointerDot, { backgroundColor: colors.primary }]} />
+      <View pointerEvents="none" style={[styles.mousePointer, { left: pos.x - 3, top: pos.y - 3 }]}>
+        <Feather name="mouse-pointer" size={22} color={colors.primary} />
       </View>
       <View style={[styles.trackpadCard, { backgroundColor: colors.card, borderColor: colors.primary, borderRadius: radius, overflow: "hidden" }]}>
         <LinearGradient colors={palette.titleGradient} style={styles.trackpadHeader} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
@@ -473,10 +472,13 @@ export default function NotepadScreen() {
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [zenMode, setZenMode] = useState(false);
+  const [readMode, setReadMode] = useState(false);
   const [toolbarOpen, setToolbarOpen] = useState(true);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [importError, setImportError] = useState("");
   const [openMenu, setOpenMenu] = useState<null | "file" | "edit" | "view" | "tools" | "help">(null);
+  const [menuBarBottom, setMenuBarBottom] = useState(24);
+  const [menuItemLeft, setMenuItemLeft] = useState<Record<string, number>>({});
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [gotoOpen, setGotoOpen] = useState(false);
@@ -741,11 +743,19 @@ export default function NotepadScreen() {
           ) : null}
 
           {!zenMode ? (
-            <View style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}>
+            <View
+              style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
+              onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+            >
               <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
                 <MTarget key={id} id={`menu-${id}`} onPress={() => setOpenMenu((current) => (current === id ? null : id))}>
-                  <Pressable onPress={() => setOpenMenu((current) => (current === id ? null : id))} style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]} testID={`menu-${id}`}>
+                  <Pressable
+                    onPress={() => setOpenMenu((current) => (current === id ? null : id))}
+                    onLayout={(e) => setMenuItemLeft((prev) => (prev[id] === e.nativeEvent.layout.x ? prev : { ...prev, [id]: e.nativeEvent.layout.x }))}
+                    style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]}
+                    testID={`menu-${id}`}
+                  >
                     <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
                   </Pressable>
                 </MTarget>
@@ -754,8 +764,9 @@ export default function NotepadScreen() {
           ) : null}
 
           {openMenu ? (
-            <Pressable onPress={() => setOpenMenu(null)} style={styles.menuOverlay}>
-              <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: openMenu === "file" ? 0 : openMenu === "edit" ? 44 : openMenu === "view" ? 88 : openMenu === "tools" ? 132 : 176 }]}>
+            <>
+              <Pressable onPress={() => setOpenMenu(null)} style={[styles.menuOverlay, { top: menuBarBottom }]} />
+              <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: menuItemLeft[openMenu] ?? 0, top: menuBarBottom + 2 }]}>
                 {openMenu === "file" ? (
                   <>
                     <DropdownItem label="New" hint="Blank note" onPress={() => { createNote(); setOpenMenu(null); }} />
@@ -805,6 +816,7 @@ export default function NotepadScreen() {
                     <DropdownItem label="Document tabs" checked={tabsLayout === "tabs"} onPress={() => { setTabsLayout("tabs"); setOpenMenu(null); }} />
                     <DropdownItem label="Document list" checked={tabsLayout === "list"} onPress={() => { setTabsLayout("list"); setOpenMenu(null); }} />
                     <DropdownSeparator />
+                    <DropdownItem label="Read mode" hint="Hides the keyboard · taps won't open it" checked={readMode} onPress={() => { setReadMode((current) => !current); setOpenMenu(null); }} />
                     <DropdownItem label="Zen mode" checked={zenMode} onPress={() => { setZenMode((current) => !current); setOpenMenu(null); }} />
                   </>
                 ) : null}
@@ -829,7 +841,7 @@ export default function NotepadScreen() {
                   </>
                 ) : null}
               </View>
-            </Pressable>
+            </>
           ) : null}
 
           {!zenMode && toolbarOpen ? (() => {
@@ -857,6 +869,7 @@ export default function NotepadScreen() {
               { kind: "btn", id: "tb-trim", icon: "align-left", label: "Trim spaces", onPress: trimTrailingSpaces, color: colors.foreground },
               { kind: "sep" },
               { kind: "btn", id: "tb-cmp", icon: "columns", label: "Compare", onPress: toggleCompare, color: compareOpen ? colors.primary : colors.foreground },
+              { kind: "btn", id: "tb-read", icon: readMode ? "eye" : "eye-off", label: "Read mode", onPress: () => setReadMode((c) => !c), color: readMode ? colors.primary : colors.foreground },
               { kind: "btn", id: "tb-zen", icon: zenMode ? "minimize-2" : "maximize-2", label: "Zen mode", onPress: () => setZenMode((c) => !c), color: colors.foreground },
               { kind: "btn", id: "tb-mouse", icon: "mouse-pointer", label: "Trackpad", onPress: () => setMouseOn((c) => !c), color: mouseOn ? colors.primary : colors.foreground },
               { kind: "sep" },
@@ -1022,7 +1035,7 @@ export default function NotepadScreen() {
               <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={styles.editorRow}>
                   <EditorGutter lineCount={stats.lines} />
-                  <TextInput value={activeNote.body} onChangeText={(body) => updateActiveNote({ body })} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} spellCheck={false} style={[styles.editorInput, { color: colors.foreground }]} placeholder="Start typing..." placeholderTextColor={colors.mutedForeground} selection={selection} onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)} testID="editor-input" />
+                  <TextInput editable={!readMode} value={activeNote.body} onChangeText={(body) => updateActiveNote({ body })} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} spellCheck={false} style={[styles.editorInput, { color: colors.foreground }]} placeholder="Start typing..." placeholderTextColor={colors.mutedForeground} selection={selection} onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)} testID="editor-input" />
                 </View>
                 <SyntaxPreview note={activeNote} />
               </ScrollView>
@@ -1455,8 +1468,8 @@ const styles = StyleSheet.create({
   menuItem: { paddingHorizontal: 8, justifyContent: "center", height: 22, marginVertical: 1 },
   menuItemText: { fontFamily: "Inter_500Medium", fontSize: 12 },
   menuOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
-  menuDropdown: { position: "absolute", top: 50, minWidth: 220, borderWidth: 1, paddingVertical: 4 },
-  dropdownItem: { paddingHorizontal: 8, paddingVertical: 6, gap: 1 },
+  menuDropdown: { position: "absolute", minWidth: 180, borderWidth: 1, paddingVertical: 4, zIndex: 101, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4 },
+  dropdownItem: { paddingHorizontal: 10, paddingVertical: 5, gap: 1 },
   dropdownItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
   dropdownCheck: { fontFamily: mono, fontSize: 12, width: 12, textAlign: "center" },
   dropdownLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
@@ -1478,8 +1491,7 @@ const styles = StyleSheet.create({
   prefRowHint: { fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 1 },
   aboutBig: { fontFamily: "Inter_700Bold", fontSize: 16, marginBottom: 4 },
   aboutText: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
-  mousePointer: { position: "absolute", width: 36, height: 36, alignItems: "center", justifyContent: "center", zIndex: 200 },
-  mousePointerDot: { position: "absolute", width: 4, height: 4, borderRadius: 2, top: 14, left: 14 },
+  mousePointer: { position: "absolute", zIndex: 200 },
   clickRipple: { position: "absolute", width: 36, height: 36, borderRadius: 18, borderWidth: 2, zIndex: 199 },
   trackpadCard: { position: "absolute", left: 12, right: 12, bottom: 16, borderWidth: 2, zIndex: 201 },
   trackpadHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
