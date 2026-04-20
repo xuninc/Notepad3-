@@ -159,9 +159,8 @@ const MouseOverlay = React.memo(function MouseOverlay({ targetsRef, palette, col
   return (
     <>
       {ripple ? <View pointerEvents="none" style={[styles.clickRipple, { left: ripple.x - 18, top: ripple.y - 18, borderColor: colors.primary }]} /> : null}
-      <View pointerEvents="none" style={[styles.mousePointer, { left: pos.x, top: pos.y }]}>
-        <Feather name="navigation" size={26} color={colors.primary} style={{ transform: [{ rotate: "-30deg" }] }} />
-        <View style={[styles.mousePointerDot, { backgroundColor: colors.primary }]} />
+      <View pointerEvents="none" style={[styles.mousePointer, { left: pos.x - 3, top: pos.y - 3 }]}>
+        <Feather name="mouse-pointer" size={22} color={colors.primary} />
       </View>
       <View style={[styles.trackpadCard, { backgroundColor: colors.card, borderColor: colors.primary, borderRadius: radius, overflow: "hidden" }]}>
         <LinearGradient colors={palette.titleGradient} style={styles.trackpadHeader} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
@@ -322,6 +321,30 @@ function SyntaxLine({ line, language, muted }: { line: string; language: NoteLan
   );
 }
 
+function SheetRow({ icon, label, hint, onPress, destructive, checked }: { icon?: keyof typeof Feather.glyphMap; label: string; hint?: string; onPress: () => void; destructive?: boolean; checked?: boolean }) {
+  const colors = useColors();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.sheetRow, { backgroundColor: pressed ? colors.secondary : "transparent", borderColor: colors.border }]}>
+      {icon ? <Feather name={icon} size={20} color={destructive ? colors.destructive : colors.foreground} style={{ width: 24 }} /> : <View style={{ width: 24 }} />}
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={[styles.sheetRowLabel, { color: destructive ? colors.destructive : colors.foreground }]}>{label}</Text>
+        {hint ? <Text style={[styles.sheetRowHint, { color: colors.mutedForeground }]}>{hint}</Text> : null}
+      </View>
+      {checked === true ? <Feather name="check" size={18} color={colors.primary} /> : null}
+    </Pressable>
+  );
+}
+
+function SheetSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const colors = useColors();
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={[styles.sheetSectionTitle, { color: colors.mutedForeground }]}>{title.toUpperCase()}</Text>
+      <View>{children}</View>
+    </View>
+  );
+}
+
 function DropdownItem({ label, hint, onPress, destructive, checked }: { label: string; hint?: string; onPress: () => void; destructive?: boolean; checked?: boolean }) {
   const colors = useColors();
   return (
@@ -447,7 +470,8 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const isMobile = layoutMode === "mobile";
   const [toolbarTip, setToolbarTip] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTip = useCallback((text: string) => {
@@ -473,10 +497,14 @@ export default function NotepadScreen() {
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [zenMode, setZenMode] = useState(false);
+  const [readMode, setReadMode] = useState(false);
   const [toolbarOpen, setToolbarOpen] = useState(true);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [importError, setImportError] = useState("");
   const [openMenu, setOpenMenu] = useState<null | "file" | "edit" | "view" | "tools" | "help">(null);
+  const [menuBarBottom, setMenuBarBottom] = useState(24);
+  const [menuItemLeft, setMenuItemLeft] = useState<Record<string, number>>({});
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [gotoOpen, setGotoOpen] = useState(false);
@@ -731,21 +759,34 @@ export default function NotepadScreen() {
   return (
     <MouseContext.Provider value={mouseRegistry}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
-        <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top, paddingBottom: Platform.OS === "web" ? 34 : insets.bottom }]}>
+        <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top, paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + (isMobile && !zenMode ? 64 : 0) }]}>
           {!zenMode ? (
             <View style={[styles.titleBar, { borderColor: colors.border, borderTopLeftRadius: radius, borderTopRightRadius: radius, overflow: "hidden" }]}>
               <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               <Ionicons name="document-text-outline" size={13} color={colors.primaryForeground} />
               <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.primaryForeground }]}>{activeNote.title} - Notepad 3++</Text>
+              {isMobile ? (
+                <Pressable onPress={() => setActionSheetOpen(true)} style={styles.titleBarMore} testID="title-more" hitSlop={10}>
+                  <Feather name="more-horizontal" size={18} color={colors.primaryForeground} />
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
-          {!zenMode ? (
-            <View style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}>
+          {!zenMode && !isMobile ? (
+            <View
+              style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
+              onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+            >
               <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
                 <MTarget key={id} id={`menu-${id}`} onPress={() => setOpenMenu((current) => (current === id ? null : id))}>
-                  <Pressable onPress={() => setOpenMenu((current) => (current === id ? null : id))} style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]} testID={`menu-${id}`}>
+                  <Pressable
+                    onPress={() => setOpenMenu((current) => (current === id ? null : id))}
+                    onLayout={(e) => setMenuItemLeft((prev) => (prev[id] === e.nativeEvent.layout.x ? prev : { ...prev, [id]: e.nativeEvent.layout.x }))}
+                    style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]}
+                    testID={`menu-${id}`}
+                  >
                     <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
                   </Pressable>
                 </MTarget>
@@ -753,9 +794,10 @@ export default function NotepadScreen() {
             </View>
           ) : null}
 
-          {openMenu ? (
-            <Pressable onPress={() => setOpenMenu(null)} style={styles.menuOverlay}>
-              <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: openMenu === "file" ? 0 : openMenu === "edit" ? 44 : openMenu === "view" ? 88 : openMenu === "tools" ? 132 : 176 }]}>
+          {openMenu && !isMobile ? (
+            <>
+              <Pressable onPress={() => setOpenMenu(null)} style={[styles.menuOverlay, { top: menuBarBottom }]} />
+              <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: menuItemLeft[openMenu] ?? 0, top: menuBarBottom + 2 }]}>
                 {openMenu === "file" ? (
                   <>
                     <DropdownItem label="New" hint="Blank note" onPress={() => { createNote(); setOpenMenu(null); }} />
@@ -805,6 +847,7 @@ export default function NotepadScreen() {
                     <DropdownItem label="Document tabs" checked={tabsLayout === "tabs"} onPress={() => { setTabsLayout("tabs"); setOpenMenu(null); }} />
                     <DropdownItem label="Document list" checked={tabsLayout === "list"} onPress={() => { setTabsLayout("list"); setOpenMenu(null); }} />
                     <DropdownSeparator />
+                    <DropdownItem label="Read mode" hint="Hides the keyboard · taps won't open it" checked={readMode} onPress={() => { setReadMode((current) => !current); setOpenMenu(null); }} />
                     <DropdownItem label="Zen mode" checked={zenMode} onPress={() => { setZenMode((current) => !current); setOpenMenu(null); }} />
                   </>
                 ) : null}
@@ -829,10 +872,10 @@ export default function NotepadScreen() {
                   </>
                 ) : null}
               </View>
-            </Pressable>
+            </>
           ) : null}
 
-          {!zenMode && toolbarOpen ? (() => {
+          {!zenMode && toolbarOpen && !isMobile ? (() => {
             type TbItem = { kind: "btn"; id: string; icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; color: string } | { kind: "sep" };
             const items: TbItem[] = [
               { kind: "btn", id: "tb-new", icon: "file-plus", label: "New", onPress: createNote, color: colors.foreground },
@@ -857,6 +900,7 @@ export default function NotepadScreen() {
               { kind: "btn", id: "tb-trim", icon: "align-left", label: "Trim spaces", onPress: trimTrailingSpaces, color: colors.foreground },
               { kind: "sep" },
               { kind: "btn", id: "tb-cmp", icon: "columns", label: "Compare", onPress: toggleCompare, color: compareOpen ? colors.primary : colors.foreground },
+              { kind: "btn", id: "tb-read", icon: readMode ? "eye" : "eye-off", label: "Read mode", onPress: () => setReadMode((c) => !c), color: readMode ? colors.primary : colors.foreground },
               { kind: "btn", id: "tb-zen", icon: zenMode ? "minimize-2" : "maximize-2", label: "Zen mode", onPress: () => setZenMode((c) => !c), color: colors.foreground },
               { kind: "btn", id: "tb-mouse", icon: "mouse-pointer", label: "Trackpad", onPress: () => setMouseOn((c) => !c), color: mouseOn ? colors.primary : colors.foreground },
               { kind: "sep" },
@@ -899,7 +943,7 @@ export default function NotepadScreen() {
             );
           })() : null}
 
-          {!zenMode && !toolbarOpen ? (
+          {!zenMode && !toolbarOpen && !isMobile ? (
             <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
               <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               <Pressable onPress={() => setToolbarOpen(true)} style={styles.toolbarStripPress}>
@@ -1021,8 +1065,8 @@ export default function NotepadScreen() {
             ) : (
               <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={styles.editorRow}>
-                  <EditorGutter lineCount={stats.lines} />
-                  <TextInput value={activeNote.body} onChangeText={(body) => updateActiveNote({ body })} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} spellCheck={false} style={[styles.editorInput, { color: colors.foreground }]} placeholder="Start typing..." placeholderTextColor={colors.mutedForeground} selection={selection} onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)} testID="editor-input" />
+                  {!isMobile ? <EditorGutter lineCount={stats.lines} /> : null}
+                  <TextInput editable={!readMode} value={activeNote.body} onChangeText={(body) => updateActiveNote({ body })} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} spellCheck={false} style={[styles.editorInput, { color: colors.foreground }, isMobile ? { fontSize: 16, lineHeight: 24 } : null]} placeholder="Start typing..." placeholderTextColor={colors.mutedForeground} selection={selection} onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)} testID="editor-input" />
                 </View>
                 <SyntaxPreview note={activeNote} />
               </ScrollView>
@@ -1077,6 +1121,86 @@ export default function NotepadScreen() {
             <Text style={[styles.tooltipText, { color: colors.background }]} numberOfLines={1}>{toolbarTip}</Text>
           </View>
         ) : null}
+
+        {!zenMode && isMobile ? (
+          <View style={[styles.mobileBottomBar, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom || 8 }]}>
+            <Pressable onPress={() => setTabListOpen(true)} style={styles.mobileBottomBtn} testID="mobile-docs" hitSlop={8}>
+              <Feather name="list" size={22} color={colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>Docs</Text>
+            </Pressable>
+            <Pressable onPress={() => { setFindOpen(!findOpen); setReplaceOpen(false); }} style={styles.mobileBottomBtn} testID="mobile-find" hitSlop={8}>
+              <Feather name="search" size={22} color={findOpen ? colors.primary : colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: findOpen ? colors.primary : colors.mutedForeground }]}>Find</Text>
+            </Pressable>
+            <Pressable onPress={() => setReadMode((c) => !c)} style={styles.mobileBottomBtn} testID="mobile-read" hitSlop={8}>
+              <Feather name={readMode ? "eye" : "eye-off"} size={22} color={readMode ? colors.primary : colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: readMode ? colors.primary : colors.mutedForeground }]}>Read</Text>
+            </Pressable>
+            <Pressable onPress={toggleCompare} style={styles.mobileBottomBtn} testID="mobile-compare" hitSlop={8}>
+              <Feather name="columns" size={22} color={compareOpen ? colors.primary : colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: compareOpen ? colors.primary : colors.mutedForeground }]}>Compare</Text>
+            </Pressable>
+            <Pressable onPress={() => setActionSheetOpen(true)} style={styles.mobileBottomBtn} testID="mobile-more" hitSlop={8}>
+              <Feather name="more-horizontal" size={22} color={colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>More</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!zenMode && isMobile ? (
+          <Pressable
+            onPress={() => { createNote(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+            style={({ pressed }) => [styles.mobileFab, { backgroundColor: colors.primary, bottom: 80 + (insets.bottom || 0), opacity: pressed ? 0.85 : 1 }]}
+            testID="mobile-fab-new"
+          >
+            <Feather name="plus" size={26} color={colors.primaryForeground} />
+          </Pressable>
+        ) : null}
+
+        <Modal visible={actionSheetOpen} transparent animationType="slide" onRequestClose={() => setActionSheetOpen(false)}>
+          <Pressable onPress={() => setActionSheetOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+            <Pressable onPress={() => undefined} style={[styles.sheetContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+              <ScrollView contentContainerStyle={styles.sheetScroll} showsVerticalScrollIndicator={false}>
+                <SheetSection title="File">
+                  <SheetRow icon="file-plus" label="New" hint="Blank note" onPress={() => { createNote(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="folder" label="Open from Files..." onPress={() => { setActionSheetOpen(false); importFromFiles(); }} />
+                  <SheetRow icon="list" label="Open documents..." hint="Switch between open notes" onPress={() => { setTabListOpen(true); setActionSheetOpen(false); }} />
+                  <SheetRow icon="copy" label="Duplicate doc" onPress={() => { duplicateActiveNote(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="edit-2" label="Rename..." onPress={() => { setRenameTarget({ id: activeNote.id, title: activeNote.title }); setActionSheetOpen(false); }} />
+                  <SheetRow icon="x-circle" label="Close" hint="Close current document" onPress={() => { deleteNote(activeNote.id); setActionSheetOpen(false); }} />
+                  <SheetRow icon="trash-2" label="Delete doc" destructive onPress={() => { deleteActiveNote(); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="Edit">
+                  <SheetRow icon="scissors" label="Cut" onPress={() => { cutSelection(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="clipboard" label="Copy" onPress={() => { copySelection(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="download" label="Paste" onPress={() => { pasteFromClipboard(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="maximize" label="Select all" onPress={() => { selectAll(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="search" label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); setActionSheetOpen(false); }} />
+                  <SheetRow icon="repeat" label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); setActionSheetOpen(false); }} />
+                  <SheetRow icon="clock" label="Insert date" hint="Current timestamp" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setActionSheetOpen(false); }} />
+                  <SheetRow icon="plus-square" label="Duplicate line" onPress={() => { duplicateCurrentLine(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="x-circle" label="Delete line" onPress={() => { deleteCurrentLine(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="list" label="Sort lines" onPress={() => { sortLines(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="align-left" label="Trim spaces" onPress={() => { trimTrailingSpaces(); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="View">
+                  <SheetRow icon={readMode ? "eye" : "eye-off"} label="Read mode" hint="Hides the keyboard" checked={readMode} onPress={() => { setReadMode((c) => !c); setActionSheetOpen(false); }} />
+                  <SheetRow icon="maximize-2" label="Zen mode" checked={zenMode} onPress={() => { setZenMode((c) => !c); setActionSheetOpen(false); }} />
+                  <SheetRow icon="columns" label="Compare documents" checked={compareOpen} onPress={() => { toggleCompare(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="mouse-pointer" label="Trackpad" hint="On-screen pointer" checked={mouseOn} onPress={() => { setMouseOn((c) => !c); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="Tools">
+                  <SheetRow icon="code" label="Change syntax..." onPress={() => { setLangOpen(true); setActionSheetOpen(false); }} />
+                  <SheetRow icon="settings" label="Preferences..." onPress={() => { setPrefsOpen(true); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="Help">
+                  <SheetRow icon="info" label="About Notepad 3++" onPress={() => { setAboutOpen(true); setActionSheetOpen(false); }} />
+                </SheetSection>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <Modal visible={tabMenuId !== null} transparent animationType="fade" onRequestClose={() => setTabMenuId(null)}>
           <Pressable onPress={() => setTabMenuId(null)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
@@ -1203,6 +1327,17 @@ export default function NotepadScreen() {
                 </Pressable>
               </View>
               <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={styles.modalBody}>
+                <Text style={[styles.modalSection, { color: colors.foreground }]}>Layout</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
+                  <Pressable onPress={() => setLayoutMode("classic")} style={{ flex: 1, padding: 10, borderRadius: Math.min(radius, 4), borderWidth: 1, borderColor: layoutMode === "classic" ? colors.primary : colors.border, backgroundColor: layoutMode === "classic" ? colors.primary : "transparent" }} testID="layout-classic">
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: layoutMode === "classic" ? colors.primaryForeground : colors.foreground, textAlign: "center" }}>Classic</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: layoutMode === "classic" ? colors.primaryForeground : colors.mutedForeground, textAlign: "center", marginTop: 2 }}>Desktop-style menus</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setLayoutMode("mobile")} style={{ flex: 1, padding: 10, borderRadius: Math.min(radius, 4), borderWidth: 1, borderColor: layoutMode === "mobile" ? colors.primary : colors.border, backgroundColor: layoutMode === "mobile" ? colors.primary : "transparent" }} testID="layout-mobile">
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: layoutMode === "mobile" ? colors.primaryForeground : colors.foreground, textAlign: "center" }}>Mobile</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: layoutMode === "mobile" ? colors.primaryForeground : colors.mutedForeground, textAlign: "center", marginTop: 2 }}>Bottom bar + sheet</Text>
+                  </Pressable>
+                </View>
                 <Text style={[styles.modalSection, { color: colors.foreground }]}>Theme</Text>
                 {themeChoices.map((choice) => {
                   const selected = preference === choice.id;
@@ -1367,6 +1502,7 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   titleBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
   titleBarText: { fontFamily: "Inter_500Medium", fontSize: 12, flex: 1 },
+  titleBarMore: { paddingHorizontal: 8, paddingVertical: 4 },
   toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 3, borderBottomWidth: 1, gap: 1 },
   toolbarDouble: { alignItems: "stretch", paddingVertical: 2 },
   toolbarSep: { width: 1, height: 18, marginHorizontal: 3 },
@@ -1455,13 +1591,24 @@ const styles = StyleSheet.create({
   menuItem: { paddingHorizontal: 8, justifyContent: "center", height: 22, marginVertical: 1 },
   menuItemText: { fontFamily: "Inter_500Medium", fontSize: 12 },
   menuOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
-  menuDropdown: { position: "absolute", top: 50, minWidth: 220, borderWidth: 1, paddingVertical: 4 },
-  dropdownItem: { paddingHorizontal: 8, paddingVertical: 6, gap: 1 },
+  menuDropdown: { position: "absolute", minWidth: 180, borderWidth: 1, paddingVertical: 4, zIndex: 101, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4 },
+  dropdownItem: { paddingHorizontal: 10, paddingVertical: 5, gap: 1 },
   dropdownItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
   dropdownCheck: { fontFamily: mono, fontSize: 12, width: 12, textAlign: "center" },
   dropdownLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
   dropdownHint: { fontFamily: "Inter_400Regular", fontSize: 10 },
   dropdownSeparator: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  sheetRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 48 },
+  sheetRowLabel: { fontFamily: "Inter_500Medium", fontSize: 16 },
+  sheetRowHint: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  sheetSectionTitle: { fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 0.8, paddingHorizontal: 16, paddingVertical: 8 },
+  sheetContainer: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "85%", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 16 },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 8, marginTop: 4 },
+  sheetScroll: { paddingBottom: 24 },
+  mobileBottomBar: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start", borderTopWidth: 1, paddingTop: 6, paddingHorizontal: 4, zIndex: 50 },
+  mobileBottomBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, minHeight: 48 },
+  mobileBottomLabel: { fontFamily: "Inter_500Medium", fontSize: 10, marginTop: 2 },
+  mobileFab: { position: "absolute", right: 16, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", zIndex: 60, shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
   modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },
@@ -1478,8 +1625,7 @@ const styles = StyleSheet.create({
   prefRowHint: { fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 1 },
   aboutBig: { fontFamily: "Inter_700Bold", fontSize: 16, marginBottom: 4 },
   aboutText: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
-  mousePointer: { position: "absolute", width: 36, height: 36, alignItems: "center", justifyContent: "center", zIndex: 200 },
-  mousePointerDot: { position: "absolute", width: 4, height: 4, borderRadius: 2, top: 14, left: 14 },
+  mousePointer: { position: "absolute", zIndex: 200 },
   clickRipple: { position: "absolute", width: 36, height: 36, borderRadius: 18, borderWidth: 2, zIndex: 199 },
   trackpadCard: { position: "absolute", left: 12, right: 12, bottom: 16, borderWidth: 2, zIndex: 201 },
   trackpadHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
