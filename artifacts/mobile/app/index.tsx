@@ -759,7 +759,7 @@ export default function NotepadScreen() {
   return (
     <MouseContext.Provider value={mouseRegistry}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
-        <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top, paddingBottom: Platform.OS === "web" ? 34 : insets.bottom }]}>
+        <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top, paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + (isMobile && !zenMode ? 64 : 0) }]}>
           {!zenMode ? (
             <View style={[styles.titleBar, { borderColor: colors.border, borderTopLeftRadius: radius, borderTopRightRadius: radius, overflow: "hidden" }]}>
               <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
@@ -875,7 +875,7 @@ export default function NotepadScreen() {
             </>
           ) : null}
 
-          {!zenMode && toolbarOpen ? (() => {
+          {!zenMode && toolbarOpen && !isMobile ? (() => {
             type TbItem = { kind: "btn"; id: string; icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; color: string } | { kind: "sep" };
             const items: TbItem[] = [
               { kind: "btn", id: "tb-new", icon: "file-plus", label: "New", onPress: createNote, color: colors.foreground },
@@ -943,7 +943,7 @@ export default function NotepadScreen() {
             );
           })() : null}
 
-          {!zenMode && !toolbarOpen ? (
+          {!zenMode && !toolbarOpen && !isMobile ? (
             <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
               <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               <Pressable onPress={() => setToolbarOpen(true)} style={styles.toolbarStripPress}>
@@ -1119,6 +1119,31 @@ export default function NotepadScreen() {
         {toolbarTip ? (
           <View pointerEvents="none" style={[styles.tooltipBubble, { top: insets.top + 6, backgroundColor: colors.foreground, borderColor: colors.border, borderRadius: Math.min(radius, 6) }]}>
             <Text style={[styles.tooltipText, { color: colors.background }]} numberOfLines={1}>{toolbarTip}</Text>
+          </View>
+        ) : null}
+
+        {!zenMode && isMobile ? (
+          <View style={[styles.mobileBottomBar, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom || 8 }]}>
+            <Pressable onPress={() => setTabListOpen(true)} style={styles.mobileBottomBtn} testID="mobile-docs" hitSlop={8}>
+              <Feather name="list" size={22} color={colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>Docs</Text>
+            </Pressable>
+            <Pressable onPress={() => { setFindOpen(!findOpen); setReplaceOpen(false); }} style={styles.mobileBottomBtn} testID="mobile-find" hitSlop={8}>
+              <Feather name="search" size={22} color={findOpen ? colors.primary : colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: findOpen ? colors.primary : colors.mutedForeground }]}>Find</Text>
+            </Pressable>
+            <Pressable onPress={() => setReadMode((c) => !c)} style={styles.mobileBottomBtn} testID="mobile-read" hitSlop={8}>
+              <Feather name={readMode ? "eye" : "eye-off"} size={22} color={readMode ? colors.primary : colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: readMode ? colors.primary : colors.mutedForeground }]}>Read</Text>
+            </Pressable>
+            <Pressable onPress={toggleCompare} style={styles.mobileBottomBtn} testID="mobile-compare" hitSlop={8}>
+              <Feather name="columns" size={22} color={compareOpen ? colors.primary : colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: compareOpen ? colors.primary : colors.mutedForeground }]}>Compare</Text>
+            </Pressable>
+            <Pressable onPress={() => setActionSheetOpen(true)} style={styles.mobileBottomBtn} testID="mobile-more" hitSlop={8}>
+              <Feather name="more-horizontal" size={22} color={colors.foreground} />
+              <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>More</Text>
+            </Pressable>
           </View>
         ) : null}
 
@@ -1559,6 +1584,9 @@ const styles = StyleSheet.create({
   sheetContainer: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "85%", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 16 },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 8, marginTop: 4 },
   sheetScroll: { paddingBottom: 24 },
+  mobileBottomBar: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start", borderTopWidth: 1, paddingTop: 6, paddingHorizontal: 4, zIndex: 50 },
+  mobileBottomBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, minHeight: 48 },
+  mobileBottomLabel: { fontFamily: "Inter_500Medium", fontSize: 10, marginTop: 2 },
   modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },
