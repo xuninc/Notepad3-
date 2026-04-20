@@ -446,7 +446,8 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const isMobile = layoutMode === "mobile";
   const [toolbarTip, setToolbarTip] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTip = useCallback((text: string) => {
@@ -742,7 +743,7 @@ export default function NotepadScreen() {
             </View>
           ) : null}
 
-          {!zenMode ? (
+          {!zenMode && !isMobile ? (
             <View
               style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
               onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
@@ -763,7 +764,7 @@ export default function NotepadScreen() {
             </View>
           ) : null}
 
-          {openMenu ? (
+          {openMenu && !isMobile ? (
             <>
               <Pressable onPress={() => setOpenMenu(null)} style={[styles.menuOverlay, { top: menuBarBottom }]} />
               <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: menuItemLeft[openMenu] ?? 0, top: menuBarBottom + 2 }]}>
