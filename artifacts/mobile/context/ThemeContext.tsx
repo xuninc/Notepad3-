@@ -39,6 +39,19 @@ const LABELS_KEY = "notepad3pp.toolbarLabels";
 const ROWS_KEY = "notepad3pp.toolbarRows";
 const CUSTOM_KEY = "notepad3pp.customPalette";
 const LAYOUT_KEY = "notepad3pp.layoutMode";
+// Set on startup when we're about to render classic layout; cleared once we've stayed
+// alive long enough to know that render didn't crash. If we boot up and find this flag
+// still set, the previous attempt didn't survive — fall back to mobile so the app stays
+// reachable instead of looping into the same crash.
+const LAYOUT_PENDING_KEY = "notepad3pp.layoutMode.pendingClassic";
+const LAYOUT_STABLE_MS = 1500;
+
+export async function resetLayoutModeToMobile(): Promise<void> {
+  await Promise.all([
+    AsyncStorage.setItem(LAYOUT_KEY, "mobile"),
+    AsyncStorage.removeItem(LAYOUT_PENDING_KEY),
+  ]).catch(() => undefined);
+}
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
@@ -79,10 +92,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         if (value && (VALID_ROWS as string[]).includes(value)) setToolbarRowsState(value as ToolbarRows);
       })
       .catch(() => undefined);
-    AsyncStorage.getItem(LAYOUT_KEY)
-      .then((value) => {
+    Promise.all([AsyncStorage.getItem(LAYOUT_KEY), AsyncStorage.getItem(LAYOUT_PENDING_KEY)])
+      .then(([value, pending]) => {
         if (value && (VALID_LAYOUT as string[]).includes(value)) {
+          if (value === "classic" && pending === "1") {
+            AsyncStorage.setItem(LAYOUT_KEY, "mobile").catch(() => undefined);
+            AsyncStorage.removeItem(LAYOUT_PENDING_KEY).catch(() => undefined);
+            setLayoutModeState("mobile");
+            return;
+          }
           setLayoutModeState(value as LayoutMode);
+          if (value === "classic") {
+            AsyncStorage.setItem(LAYOUT_PENDING_KEY, "1").catch(() => undefined);
+          }
         }
       })
       .catch(() => undefined);
@@ -122,7 +144,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setLayoutMode = (next: LayoutMode) => {
     setLayoutModeState(next);
     AsyncStorage.setItem(LAYOUT_KEY, next).catch(() => undefined);
+    if (next === "classic") {
+      AsyncStorage.setItem(LAYOUT_PENDING_KEY, "1").catch(() => undefined);
+    } else {
+      AsyncStorage.removeItem(LAYOUT_PENDING_KEY).catch(() => undefined);
+    }
   };
+
+  useEffect(() => {
+    if (layoutMode !== "classic") return;
+    const t = setTimeout(() => {
+      AsyncStorage.removeItem(LAYOUT_PENDING_KEY).catch(() => undefined);
+    }, LAYOUT_STABLE_MS);
+    return () => clearTimeout(t);
+  }, [layoutMode]);
 
   const setCustomColor = (key: CustomPaletteKey, value: string) => {
     setCustomPaletteState((prev) => {
