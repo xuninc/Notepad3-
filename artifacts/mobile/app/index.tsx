@@ -548,7 +548,7 @@ export default function NotepadScreen() {
     setImportError("");
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["text/*", "application/json", "application/javascript", "application/xml", "application/octet-stream"],
+        type: "*/*",
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -558,7 +558,7 @@ export default function NotepadScreen() {
       const text = await response.text();
       importNote(asset.name || "imported.txt", text, detectLanguageFromFileName(asset.name || ""));
     } catch {
-      setImportError("Could not import that file. Try a plain text, markdown, code, JSON, or assembly file.");
+      setImportError("Could not read that file. It may be unreadable or too large.");
     }
   };
 
