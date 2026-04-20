@@ -22,6 +22,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 
 import { CUSTOM_PALETTE_KEYS, customDefaults, customPaletteLabels, CustomPaletteKey } from "@/constants/colors";
 import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
@@ -766,8 +767,8 @@ export default function NotepadScreen() {
               <Ionicons name="document-text-outline" size={13} color={colors.primaryForeground} />
               <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.primaryForeground }]}>{activeNote.title} - Notepad 3++</Text>
               {isMobile ? (
-                <Pressable onPress={() => setActionSheetOpen(true)} style={styles.titleBarMore} testID="title-more" hitSlop={10}>
-                  <Feather name="more-horizontal" size={18} color={colors.primaryForeground} />
+                <Pressable onPress={() => setReadMode((c) => !c)} style={styles.titleBarMore} testID="title-read" hitSlop={10} accessibilityLabel={readMode ? "Disable read mode" : "Enable read mode (dismisses keyboard)"}>
+                  <Feather name={readMode ? "eye" : "eye-off"} size={18} color={colors.primaryForeground} />
                 </Pressable>
               ) : null}
             </View>
@@ -839,6 +840,8 @@ export default function NotepadScreen() {
                 ) : null}
                 {openMenu === "view" ? (
                   <>
+                    <DropdownItem label="Switch to mobile layout" hint="Bottom bar + action sheet" onPress={() => { setLayoutMode("mobile"); setOpenMenu(null); }} />
+                    <DropdownSeparator />
                     <DropdownItem label="Toolbar" checked={toolbarOpen} onPress={() => { setToolbarOpen((current) => !current); setOpenMenu(null); }} />
                     <DropdownItem label="Hide toolbar" onPress={() => { setToolbarOpen(false); setOpenMenu(null); }} />
                     <DropdownItem label="Show text under icons" checked={toolbarLabels} onPress={() => { setToolbarLabels(!toolbarLabels); setOpenMenu(null); }} />
@@ -957,9 +960,11 @@ export default function NotepadScreen() {
             tabsLayout === "tabs" ? (
               <View style={[styles.tabsScroller, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: "row" }]}>
                 <FlatList horizontal data={notes} keyExtractor={(item) => item.id} renderItem={({ item }) => <DocumentTab item={item} active={item.id === activeId} onLongPress={(id) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setTabMenuId(id); }} />} style={{ flex: 1 }} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsList} scrollEnabled={notes.length > 0} />
-                <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBtn, { borderLeftColor: colors.border }]} testID="tabs-list-button">
-                  <Feather name="list" size={13} color={colors.foreground} />
-                </Pressable>
+                {!isMobile ? (
+                  <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBtn, { borderLeftColor: colors.border }]} testID="tabs-list-button">
+                    <Feather name="list" size={13} color={colors.foreground} />
+                  </Pressable>
+                ) : null}
               </View>
             ) : (
               <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBar, { backgroundColor: colors.background, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="tabs-list-bar">
@@ -1123,7 +1128,7 @@ export default function NotepadScreen() {
         ) : null}
 
         {!zenMode && isMobile ? (
-          <View style={[styles.mobileBottomBar, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom || 8 }]}>
+          <KeyboardStickyView style={[styles.mobileBottomBar, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom || 8 }]}>
             <Pressable onPress={() => setTabListOpen(true)} style={styles.mobileBottomBtn} testID="mobile-docs" hitSlop={8}>
               <Feather name="list" size={22} color={colors.foreground} />
               <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>Docs</Text>
@@ -1144,17 +1149,19 @@ export default function NotepadScreen() {
               <Feather name="more-horizontal" size={22} color={colors.foreground} />
               <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>More</Text>
             </Pressable>
-          </View>
+          </KeyboardStickyView>
         ) : null}
 
         {!zenMode && isMobile ? (
-          <Pressable
-            onPress={() => { createNote(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
-            style={({ pressed }) => [styles.mobileFab, { backgroundColor: colors.primary, bottom: 80 + (insets.bottom || 0), opacity: pressed ? 0.85 : 1 }]}
-            testID="mobile-fab-new"
-          >
-            <Feather name="plus" size={26} color={colors.primaryForeground} />
-          </Pressable>
+          <KeyboardStickyView style={[styles.mobileFabAnchor, { bottom: 80 + (insets.bottom || 0) }]}>
+            <Pressable
+              onPress={() => { createNote(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+              style={({ pressed }) => [styles.mobileFabButton, { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}
+              testID="mobile-fab-new"
+            >
+              <Feather name="plus" size={26} color={colors.primaryForeground} />
+            </Pressable>
+          </KeyboardStickyView>
         ) : null}
 
         <Modal visible={actionSheetOpen} transparent animationType="slide" onRequestClose={() => setActionSheetOpen(false)}>
@@ -1185,6 +1192,7 @@ export default function NotepadScreen() {
                   <SheetRow icon="align-left" label="Trim spaces" onPress={() => { trimTrailingSpaces(); setActionSheetOpen(false); }} />
                 </SheetSection>
                 <SheetSection title="View">
+                  <SheetRow icon="monitor" label="Switch to classic layout" hint="Desktop-style menus and toolbar" onPress={() => { setLayoutMode("classic"); setActionSheetOpen(false); }} />
                   <SheetRow icon={readMode ? "eye" : "eye-off"} label="Read mode" hint="Hides the keyboard" checked={readMode} onPress={() => { setReadMode((c) => !c); setActionSheetOpen(false); }} />
                   <SheetRow icon="maximize-2" label="Zen mode" checked={zenMode} onPress={() => { setZenMode((c) => !c); setActionSheetOpen(false); }} />
                   <SheetRow icon="columns" label="Compare documents" checked={compareOpen} onPress={() => { toggleCompare(); setActionSheetOpen(false); }} />
@@ -1608,7 +1616,8 @@ const styles = StyleSheet.create({
   mobileBottomBar: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start", borderTopWidth: 1, paddingTop: 6, paddingHorizontal: 4, zIndex: 50 },
   mobileBottomBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, minHeight: 48 },
   mobileBottomLabel: { fontFamily: "Inter_500Medium", fontSize: 10, marginTop: 2 },
-  mobileFab: { position: "absolute", right: 16, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", zIndex: 60, shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
+  mobileFabAnchor: { position: "absolute", right: 16, zIndex: 60 },
+  mobileFabButton: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
   modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },
