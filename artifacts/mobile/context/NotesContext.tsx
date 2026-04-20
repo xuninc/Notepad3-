@@ -1,8 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 export type NoteLanguage = "Plain" | "Markdown" | "Assembly" | "JavaScript" | "Python" | "Web" | "JSON";
+
+// Group rapid keystrokes (< this many ms apart) into a single undo step.
+const UNDO_GROUP_MS = 800;
+const UNDO_LIMIT = 100;
 
 export interface NoteDocument {
   id: string;
@@ -28,6 +32,10 @@ interface NotesContextValue {
   closeOthers: (keepId: string) => void;
   renameNote: (id: string, title: string) => void;
   duplicateNote: (id: string) => void;
+  undo: () => string | null;
+  redo: () => string | null;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const storageKey = "pocketpad-notes-v1";
@@ -52,10 +60,24 @@ function makeUntitledName(notes: NoteDocument[]) {
   return `untitled-${nextNumber}.txt`;
 }
 
+type History = { undo: string[]; redo: string[]; lastTouch: number };
+
 export function NotesProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<NoteDocument[]>([starterNote]);
   const [activeId, setActiveIdState] = useState(starterNote.id);
   const [isLoaded, setIsLoaded] = useState(false);
+  const historiesRef = useRef<Map<string, History>>(new Map());
+  const [historyTick, setHistoryTick] = useState(0);
+  const bumpHistory = useCallback(() => setHistoryTick((t) => t + 1), []);
+
+  const getHistory = useCallback((id: string): History => {
+    let h = historiesRef.current.get(id);
+    if (!h) {
+      h = { undo: [], redo: [], lastTouch: 0 };
+      historiesRef.current.set(id, h);
+    }
+    return h;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -121,7 +143,23 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setActiveIdState(note.id);
   };
 
+  const recordEdit = useCallback((id: string, prevBody: string) => {
+    const h = getHistory(id);
+    const now = Date.now();
+    const stale = now - h.lastTouch > UNDO_GROUP_MS;
+    if (stale || h.undo.length === 0) {
+      h.undo.push(prevBody);
+      if (h.undo.length > UNDO_LIMIT) h.undo.shift();
+      if (h.redo.length > 0) h.redo = [];
+      bumpHistory();
+    }
+    h.lastTouch = now;
+  }, [bumpHistory, getHistory]);
+
   const updateActiveNote = (updates: Partial<Pick<NoteDocument, "title" | "body" | "language">>) => {
+    if (updates.body !== undefined && updates.body !== activeNote.body) {
+      recordEdit(activeNote.id, activeNote.body);
+    }
     setNotes((current) =>
       current.map((note) =>
         note.id === activeNote.id
@@ -136,6 +174,34 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       ),
     );
   };
+
+  const undo = useCallback((): string | null => {
+    const h = getHistory(activeNote.id);
+    const prev = h.undo.pop();
+    if (prev === undefined) return null;
+    h.redo.push(activeNote.body);
+    h.lastTouch = 0;
+    setNotes((current) => current.map((note) => (note.id === activeNote.id ? { ...note, body: prev, updatedAt: Date.now() } : note)));
+    bumpHistory();
+    return prev;
+  }, [activeNote.body, activeNote.id, bumpHistory, getHistory]);
+
+  const redo = useCallback((): string | null => {
+    const h = getHistory(activeNote.id);
+    const next = h.redo.pop();
+    if (next === undefined) return null;
+    h.undo.push(activeNote.body);
+    if (h.undo.length > UNDO_LIMIT) h.undo.shift();
+    h.lastTouch = 0;
+    setNotes((current) => current.map((note) => (note.id === activeNote.id ? { ...note, body: next, updatedAt: Date.now() } : note)));
+    bumpHistory();
+    return next;
+  }, [activeNote.body, activeNote.id, bumpHistory, getHistory]);
+
+  const activeHistory = historiesRef.current.get(activeNote.id);
+  const canUndo = (activeHistory?.undo.length ?? 0) > 0;
+  const canRedo = (activeHistory?.redo.length ?? 0) > 0;
+  void historyTick;
 
   const deleteActiveNote = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -226,8 +292,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       closeOthers,
       renameNote,
       duplicateNote,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
     }),
-    [activeId, activeNote, isLoaded, notes],
+    [activeId, activeNote, isLoaded, notes, undo, redo, canUndo, canRedo],
   );
 
   return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;

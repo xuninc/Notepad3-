@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Keyboard,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -22,6 +23,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller";
 
 import { CUSTOM_PALETTE_KEYS, customDefaults, customPaletteLabels, CustomPaletteKey } from "@/constants/colors";
 import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
@@ -367,6 +369,74 @@ function DropdownSeparator() {
   return <View style={[styles.dropdownSeparator, { backgroundColor: colors.border }]} />;
 }
 
+function KbBtn({ icon, label, onPress, disabled, active, colors }: { icon: keyof typeof Feather.glyphMap; label?: string; onPress: () => void; disabled?: boolean; active?: boolean; colors: ReturnType<typeof useColors> }) {
+  const tint = disabled ? colors.mutedForeground : active ? colors.primary : colors.foreground;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.kbBtn, { opacity: disabled ? 0.35 : pressed ? 0.55 : 1, backgroundColor: pressed ? colors.secondary : "transparent" }]}
+      accessibilityRole="button"
+      accessibilityLabel={label ?? icon}
+    >
+      <Feather name={icon} size={18} color={tint} />
+      {label ? <Text style={[styles.kbBtnLabel, { color: tint }]} numberOfLines={1}>{label}</Text> : null}
+    </Pressable>
+  );
+}
+
+function KbHoldBtn({ icon, label, onTick, colors }: { icon: keyof typeof Feather.glyphMap; label?: string; onTick: () => void; colors: ReturnType<typeof useColors> }) {
+  const tickRef = useRef(onTick);
+  tickRef.current = onTick;
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatsRef = useRef(0);
+
+  const stop = useCallback(() => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    repeatsRef.current = 0;
+  }, []);
+
+  useEffect(() => stop, [stop]);
+
+  const startRepeating = useCallback((delay: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      tickRef.current();
+      repeatsRef.current += 1;
+      if (repeatsRef.current === 6 && delay > 90) {
+        startRepeating(60);
+      } else if (repeatsRef.current === 3 && delay > 150) {
+        startRepeating(120);
+      }
+    }, delay);
+  }, []);
+
+  const handlePressIn = useCallback(() => {
+    tickRef.current();
+    repeatsRef.current = 0;
+    timeoutRef.current = setTimeout(() => startRepeating(220), 380);
+  }, [startRepeating]);
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPressOut={stop}
+      style={({ pressed }) => [styles.kbBtn, { opacity: pressed ? 0.55 : 1, backgroundColor: pressed ? colors.secondary : "transparent" }]}
+      accessibilityRole="button"
+      accessibilityLabel={label ?? icon}
+    >
+      <Feather name={icon} size={18} color={colors.foreground} />
+      {label ? <Text style={[styles.kbBtnLabel, { color: colors.foreground }]} numberOfLines={1}>{label}</Text> : null}
+    </Pressable>
+  );
+}
+
+function KbSep({ colors }: { colors: ReturnType<typeof useColors> }) {
+  return <View style={[styles.kbSep, { backgroundColor: colors.border }]} />;
+}
+
 function IconButton({ id, icon, onPress, color, disabled, label, showLabel, onLongPress }: { id: string; icon: keyof typeof Feather.glyphMap; onPress: () => void; color: string; disabled?: boolean; label?: string; showLabel?: boolean; onLongPress?: (label: string) => void }) {
   const colors = useColors();
   const { radius } = useTheme();
@@ -470,7 +540,7 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, accessoryRows, setAccessoryRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
   const isMobile = layoutMode === "mobile";
   const [toolbarTip, setToolbarTip] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -480,7 +550,8 @@ export default function NotepadScreen() {
     tipTimerRef.current = setTimeout(() => setToolbarTip(null), 1600);
   }, []);
   useEffect(() => () => { if (tipTimerRef.current) clearTimeout(tipTimerRef.current); }, []);
-  const { notes, activeNote, activeId, isLoaded, createNote, importNote, updateActiveNote, deleteActiveNote, duplicateActiveNote, deleteNote, closeOthers, renameNote, duplicateNote, setActiveId } = useNotes();
+  const { notes, activeNote, activeId, isLoaded, createNote, importNote, updateActiveNote, deleteActiveNote, duplicateActiveNote, deleteNote, closeOthers, renameNote, duplicateNote, setActiveId, undo, redo, canUndo, canRedo } = useNotes();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const [tabMenuId, setTabMenuId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
   const [tabListOpen, setTabListOpen] = useState(false);
@@ -746,6 +817,60 @@ export default function NotepadScreen() {
     if (!compareId && comparableNotes[0]) setCompareId(comparableNotes[0].id);
   };
 
+  const moveCursorBy = (dx: number) => {
+    const len = activeNote.body.length;
+    const next = Math.max(0, Math.min(len, selection.start + dx));
+    setSelection({ start: next, end: next });
+    Haptics.selectionAsync();
+  };
+
+  const moveCursorVertical = (direction: -1 | 1) => {
+    const body = activeNote.body;
+    const caret = Math.min(selection.start, body.length);
+    const lineStart = body.lastIndexOf("\n", caret - 1) + 1;
+    const col = caret - lineStart;
+    if (direction === -1) {
+      if (lineStart === 0) {
+        setSelection({ start: 0, end: 0 });
+        Haptics.selectionAsync();
+        return;
+      }
+      const prevLineEnd = lineStart - 1;
+      const prevLineStart = body.lastIndexOf("\n", prevLineEnd - 1) + 1;
+      const next = Math.min(prevLineStart + col, prevLineEnd);
+      setSelection({ start: next, end: next });
+    } else {
+      const lineEnd = body.indexOf("\n", caret);
+      if (lineEnd === -1) {
+        setSelection({ start: body.length, end: body.length });
+        Haptics.selectionAsync();
+        return;
+      }
+      const nextLineStart = lineEnd + 1;
+      const afterNextNewline = body.indexOf("\n", nextLineStart);
+      const nextLineEnd = afterNextNewline === -1 ? body.length : afterNextNewline;
+      const next = Math.min(nextLineStart + col, nextLineEnd);
+      setSelection({ start: next, end: next });
+    }
+    Haptics.selectionAsync();
+  };
+
+  const handleUndo = () => {
+    const next = undo();
+    if (next === null) return;
+    const at = Math.min(selection.start, next.length);
+    setSelection({ start: at, end: at });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleRedo = () => {
+    const next = redo();
+    if (next === null) return;
+    const at = Math.min(selection.start, next.length);
+    setSelection({ start: at, end: at });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   if (!isLoaded) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
@@ -765,11 +890,6 @@ export default function NotepadScreen() {
               <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               <Ionicons name="document-text-outline" size={13} color={colors.primaryForeground} />
               <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.primaryForeground }]}>{activeNote.title} - Notepad 3++</Text>
-              {isMobile ? (
-                <Pressable onPress={() => setActionSheetOpen(true)} style={styles.titleBarMore} testID="title-more" hitSlop={10}>
-                  <Feather name="more-horizontal" size={18} color={colors.primaryForeground} />
-                </Pressable>
-              ) : null}
             </View>
           ) : null}
 
@@ -839,6 +959,8 @@ export default function NotepadScreen() {
                 ) : null}
                 {openMenu === "view" ? (
                   <>
+                    <DropdownItem label="Switch to mobile layout" hint="Bottom bar + action sheet" onPress={() => { setLayoutMode("mobile"); setOpenMenu(null); }} />
+                    <DropdownSeparator />
                     <DropdownItem label="Toolbar" checked={toolbarOpen} onPress={() => { setToolbarOpen((current) => !current); setOpenMenu(null); }} />
                     <DropdownItem label="Hide toolbar" onPress={() => { setToolbarOpen(false); setOpenMenu(null); }} />
                     <DropdownItem label="Show text under icons" checked={toolbarLabels} onPress={() => { setToolbarLabels(!toolbarLabels); setOpenMenu(null); }} />
@@ -957,9 +1079,11 @@ export default function NotepadScreen() {
             tabsLayout === "tabs" ? (
               <View style={[styles.tabsScroller, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: "row" }]}>
                 <FlatList horizontal data={notes} keyExtractor={(item) => item.id} renderItem={({ item }) => <DocumentTab item={item} active={item.id === activeId} onLongPress={(id) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setTabMenuId(id); }} />} style={{ flex: 1 }} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsList} scrollEnabled={notes.length > 0} />
-                <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBtn, { borderLeftColor: colors.border }]} testID="tabs-list-button">
-                  <Feather name="list" size={13} color={colors.foreground} />
-                </Pressable>
+                {!isMobile ? (
+                  <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBtn, { borderLeftColor: colors.border }]} testID="tabs-list-button">
+                    <Feather name="list" size={13} color={colors.foreground} />
+                  </Pressable>
+                ) : null}
               </View>
             ) : (
               <Pressable onPress={() => { Haptics.selectionAsync(); setTabListOpen(true); }} style={[styles.tabsListBar, { backgroundColor: colors.background, borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID="tabs-list-bar">
@@ -1157,6 +1281,59 @@ export default function NotepadScreen() {
           </Pressable>
         ) : null}
 
+        {isMobile && keyboardVisible ? (() => {
+          type Item = { kind: "btn"; node: React.ReactNode } | { kind: "sep" };
+          const sep: Item = { kind: "sep" };
+          const items: Item[] = [
+            { kind: "btn", node: <KbBtn icon="chevron-down" label="Hide" onPress={() => Keyboard.dismiss()} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon={readMode ? "eye" : "eye-off"} label="Read" onPress={() => setReadMode((c) => !c)} active={readMode} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="corner-up-left" label="Undo" onPress={handleUndo} disabled={!canUndo} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="corner-up-right" label="Redo" onPress={handleRedo} disabled={!canRedo} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="scissors" label="Cut" onPress={cutSelection} disabled={selection.end <= selection.start} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="clipboard" label="Copy" onPress={copySelection} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="download" label="Paste" onPress={pasteFromClipboard} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbHoldBtn icon="arrow-left" onTick={() => moveCursorBy(-1)} colors={colors} /> },
+            { kind: "btn", node: <KbHoldBtn icon="arrow-up" onTick={() => moveCursorVertical(-1)} colors={colors} /> },
+            { kind: "btn", node: <KbHoldBtn icon="arrow-down" onTick={() => moveCursorVertical(1)} colors={colors} /> },
+            { kind: "btn", node: <KbHoldBtn icon="arrow-right" onTick={() => moveCursorBy(1)} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="search" label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); }} active={findOpen && !replaceOpen} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="repeat" label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); }} active={replaceOpen} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="clock" label="Date" onPress={() => insertTextAtSelection(new Date().toLocaleString())} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="list" label="Docs" onPress={() => setTabListOpen(true)} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="columns" label="Compare" onPress={toggleCompare} active={compareOpen} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="more-horizontal" label="More" onPress={() => setActionSheetOpen(true)} colors={colors} /> },
+          ];
+          const renderItem = (it: Item, idx: number) => it.kind === "sep" ? <KbSep key={`sep-${idx}`} colors={colors} /> : <React.Fragment key={`itm-${idx}`}>{it.node}</React.Fragment>;
+          if (accessoryRows === "double") {
+            const half = Math.ceil(items.length / 2);
+            const top = items.slice(0, half);
+            const bot = items.slice(half);
+            return (
+              <KeyboardStickyView style={[styles.kbAccessory, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
+                  {top.map(renderItem)}
+                </ScrollView>
+                <View style={[styles.kbAccessoryRowSep, { backgroundColor: colors.border }]} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
+                  {bot.map(renderItem)}
+                </ScrollView>
+              </KeyboardStickyView>
+            );
+          }
+          return (
+            <KeyboardStickyView style={[styles.kbAccessory, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
+                {items.map(renderItem)}
+              </ScrollView>
+            </KeyboardStickyView>
+          );
+        })() : null}
+
         <Modal visible={actionSheetOpen} transparent animationType="slide" onRequestClose={() => setActionSheetOpen(false)}>
           <Pressable onPress={() => setActionSheetOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
             <Pressable onPress={() => undefined} style={[styles.sheetContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
@@ -1185,6 +1362,7 @@ export default function NotepadScreen() {
                   <SheetRow icon="align-left" label="Trim spaces" onPress={() => { trimTrailingSpaces(); setActionSheetOpen(false); }} />
                 </SheetSection>
                 <SheetSection title="View">
+                  <SheetRow icon="monitor" label="Switch to classic layout" hint="Desktop-style menus and toolbar" onPress={() => { setLayoutMode("classic"); setActionSheetOpen(false); }} />
                   <SheetRow icon={readMode ? "eye" : "eye-off"} label="Read mode" hint="Hides the keyboard" checked={readMode} onPress={() => { setReadMode((c) => !c); setActionSheetOpen(false); }} />
                   <SheetRow icon="maximize-2" label="Zen mode" checked={zenMode} onPress={() => { setZenMode((c) => !c); setActionSheetOpen(false); }} />
                   <SheetRow icon="columns" label="Compare documents" checked={compareOpen} onPress={() => { toggleCompare(); setActionSheetOpen(false); }} />
@@ -1425,7 +1603,22 @@ export default function NotepadScreen() {
                     <Text style={[styles.prefRowHint, { color: toolbarLabels ? colors.primaryForeground : colors.mutedForeground }]}>Always visible labels for every toolbar button</Text>
                   </View>
                 </Pressable>
-                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Choices are saved on this device.</Text>
+                <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Keyboard accessory</Text>
+                {([{ id: "single" as const, label: "Single row", hint: "Scroll horizontally above the keyboard" }, { id: "double" as const, label: "Two rows", hint: "More icons visible at once, taller bar" }]).map((opt) => {
+                  const selected = accessoryRows === opt.id;
+                  return (
+                    <Pressable key={opt.id} onPress={() => setAccessoryRows(opt.id)} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID={`accessory-rows-${opt.id}`}>
+                      <View style={[styles.radio, { borderColor: selected ? colors.primaryForeground : colors.foreground }]}>
+                        {selected ? <View style={[styles.radioDot, { backgroundColor: colors.primaryForeground }]} /> : null}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{opt.label}</Text>
+                        <Text style={[styles.prefRowHint, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{opt.hint}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Hold an arrow on the keyboard accessory to repeat. Choices are saved on this device.</Text>
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -1609,6 +1802,12 @@ const styles = StyleSheet.create({
   mobileBottomBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, minHeight: 48 },
   mobileBottomLabel: { fontFamily: "Inter_500Medium", fontSize: 10, marginTop: 2 },
   mobileFab: { position: "absolute", right: 16, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", zIndex: 60, shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
+  kbAccessory: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopWidth: 1, zIndex: 80 },
+  kbAccessoryRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 4, gap: 2 },
+  kbAccessoryRowSep: { height: StyleSheet.hairlineWidth },
+  kbBtn: { minWidth: 38, paddingHorizontal: 6, paddingVertical: 4, alignItems: "center", justifyContent: "center", borderRadius: 4 },
+  kbBtnLabel: { fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 1 },
+  kbSep: { width: 1, height: 22, marginHorizontal: 2 },
   modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },

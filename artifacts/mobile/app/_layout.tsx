@@ -16,7 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotesProvider } from "@/context/NotesContext";
-import { ThemeProvider } from "@/context/ThemeContext";
+import { ThemeProvider, resetLayoutModeToMobile } from "@/context/ThemeContext";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -50,19 +50,19 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <ThemeProvider>
+      <ThemeProvider>
+        <ErrorBoundary onError={() => { resetLayoutModeToMobile(); }}>
+          <QueryClientProvider client={queryClient}>
+            <GestureHandlerRootView style={{ flex: 1 }}>
               <NotesProvider>
                 <KeyboardProvider>
                   <RootLayoutNav />
                 </KeyboardProvider>
               </NotesProvider>
-            </ThemeProvider>
-          </GestureHandlerRootView>
-        </QueryClientProvider>
-      </ErrorBoundary>
+            </GestureHandlerRootView>
+          </QueryClientProvider>
+        </ErrorBoundary>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

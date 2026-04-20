@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { resetLayoutModeToMobile } from "@/context/ThemeContext";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -27,11 +28,21 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
   const handleRestart = async () => {
     try {
+      await resetLayoutModeToMobile();
       await reloadAppAsync();
     } catch (restartError) {
       console.error("Failed to restart app:", restartError);
       resetError();
     }
+  };
+
+  const handleSafeMode = async () => {
+    try {
+      await resetLayoutModeToMobile();
+    } catch {
+      // ignore — resetError() still gives the user a way out
+    }
+    resetError();
   };
 
   const formatErrorDetails = (): string => {
@@ -95,6 +106,27 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
             ]}
           >
             Try Again
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={handleSafeMode}
+          style={({ pressed }) => [
+            styles.button,
+            styles.secondaryButton,
+            {
+              borderColor: colors.border,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.buttonText,
+              { color: colors.foreground },
+            ]}
+          >
+            Use mobile layout
           </Text>
         </Pressable>
       </View>
@@ -222,6 +254,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  secondaryButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
     fontWeight: "600",

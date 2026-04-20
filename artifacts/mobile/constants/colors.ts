@@ -118,6 +118,7 @@ export type Palette = {
 };
 
 export const themes: Record<ThemeName, Palette> = {
+  custom: buildCustomPalette({}),
   classic: {
     text: "#1a2334",
     tint: "#3a78c4",
