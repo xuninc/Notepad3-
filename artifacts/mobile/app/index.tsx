@@ -1327,6 +1327,17 @@ export default function NotepadScreen() {
                 </Pressable>
               </View>
               <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={styles.modalBody}>
+                <Text style={[styles.modalSection, { color: colors.foreground }]}>Layout</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
+                  <Pressable onPress={() => setLayoutMode("classic")} style={{ flex: 1, padding: 10, borderRadius: Math.min(radius, 4), borderWidth: 1, borderColor: layoutMode === "classic" ? colors.primary : colors.border, backgroundColor: layoutMode === "classic" ? colors.primary : "transparent" }} testID="layout-classic">
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: layoutMode === "classic" ? colors.primaryForeground : colors.foreground, textAlign: "center" }}>Classic</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: layoutMode === "classic" ? colors.primaryForeground : colors.mutedForeground, textAlign: "center", marginTop: 2 }}>Desktop-style menus</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setLayoutMode("mobile")} style={{ flex: 1, padding: 10, borderRadius: Math.min(radius, 4), borderWidth: 1, borderColor: layoutMode === "mobile" ? colors.primary : colors.border, backgroundColor: layoutMode === "mobile" ? colors.primary : "transparent" }} testID="layout-mobile">
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: layoutMode === "mobile" ? colors.primaryForeground : colors.foreground, textAlign: "center" }}>Mobile</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: layoutMode === "mobile" ? colors.primaryForeground : colors.mutedForeground, textAlign: "center", marginTop: 2 }}>Bottom bar + sheet</Text>
+                  </Pressable>
+                </View>
                 <Text style={[styles.modalSection, { color: colors.foreground }]}>Theme</Text>
                 {themeChoices.map((choice) => {
                   const selected = preference === choice.id;
