@@ -321,6 +321,30 @@ function SyntaxLine({ line, language, muted }: { line: string; language: NoteLan
   );
 }
 
+function SheetRow({ icon, label, hint, onPress, destructive, checked }: { icon?: keyof typeof Feather.glyphMap; label: string; hint?: string; onPress: () => void; destructive?: boolean; checked?: boolean }) {
+  const colors = useColors();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.sheetRow, { backgroundColor: pressed ? colors.secondary : "transparent", borderColor: colors.border }]}>
+      {icon ? <Feather name={icon} size={20} color={destructive ? colors.destructive : colors.foreground} style={{ width: 24 }} /> : <View style={{ width: 24 }} />}
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={[styles.sheetRowLabel, { color: destructive ? colors.destructive : colors.foreground }]}>{label}</Text>
+        {hint ? <Text style={[styles.sheetRowHint, { color: colors.mutedForeground }]}>{hint}</Text> : null}
+      </View>
+      {checked === true ? <Feather name="check" size={18} color={colors.primary} /> : null}
+    </Pressable>
+  );
+}
+
+function SheetSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const colors = useColors();
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={[styles.sheetSectionTitle, { color: colors.mutedForeground }]}>{title.toUpperCase()}</Text>
+      <View>{children}</View>
+    </View>
+  );
+}
+
 function DropdownItem({ label, hint, onPress, destructive, checked }: { label: string; hint?: string; onPress: () => void; destructive?: boolean; checked?: boolean }) {
   const colors = useColors();
   return (
@@ -1098,6 +1122,51 @@ export default function NotepadScreen() {
           </View>
         ) : null}
 
+        <Modal visible={actionSheetOpen} transparent animationType="slide" onRequestClose={() => setActionSheetOpen(false)}>
+          <Pressable onPress={() => setActionSheetOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+            <Pressable onPress={() => undefined} style={[styles.sheetContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+              <ScrollView contentContainerStyle={styles.sheetScroll} showsVerticalScrollIndicator={false}>
+                <SheetSection title="File">
+                  <SheetRow icon="file-plus" label="New" hint="Blank note" onPress={() => { createNote(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="folder" label="Open from Files..." onPress={() => { setActionSheetOpen(false); importFromFiles(); }} />
+                  <SheetRow icon="list" label="Open documents..." hint="Switch between open notes" onPress={() => { setTabListOpen(true); setActionSheetOpen(false); }} />
+                  <SheetRow icon="copy" label="Duplicate doc" onPress={() => { duplicateActiveNote(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="edit-2" label="Rename..." onPress={() => { setRenameTarget({ id: activeNote.id, title: activeNote.title }); setActionSheetOpen(false); }} />
+                  <SheetRow icon="x-circle" label="Close" hint="Close current document" onPress={() => { deleteNote(activeNote.id); setActionSheetOpen(false); }} />
+                  <SheetRow icon="trash-2" label="Delete doc" destructive onPress={() => { deleteActiveNote(); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="Edit">
+                  <SheetRow icon="scissors" label="Cut" onPress={() => { cutSelection(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="clipboard" label="Copy" onPress={() => { copySelection(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="download" label="Paste" onPress={() => { pasteFromClipboard(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="maximize" label="Select all" onPress={() => { selectAll(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="search" label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); setActionSheetOpen(false); }} />
+                  <SheetRow icon="repeat" label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); setActionSheetOpen(false); }} />
+                  <SheetRow icon="clock" label="Insert date" hint="Current timestamp" onPress={() => { insertTextAtSelection(new Date().toLocaleString()); setActionSheetOpen(false); }} />
+                  <SheetRow icon="plus-square" label="Duplicate line" onPress={() => { duplicateCurrentLine(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="x-circle" label="Delete line" onPress={() => { deleteCurrentLine(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="list" label="Sort lines" onPress={() => { sortLines(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="align-left" label="Trim spaces" onPress={() => { trimTrailingSpaces(); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="View">
+                  <SheetRow icon={readMode ? "eye" : "eye-off"} label="Read mode" hint="Hides the keyboard" checked={readMode} onPress={() => { setReadMode((c) => !c); setActionSheetOpen(false); }} />
+                  <SheetRow icon="maximize-2" label="Zen mode" checked={zenMode} onPress={() => { setZenMode((c) => !c); setActionSheetOpen(false); }} />
+                  <SheetRow icon="columns" label="Compare documents" checked={compareOpen} onPress={() => { toggleCompare(); setActionSheetOpen(false); }} />
+                  <SheetRow icon="mouse-pointer" label="Trackpad" hint="On-screen pointer" checked={mouseOn} onPress={() => { setMouseOn((c) => !c); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="Tools">
+                  <SheetRow icon="code" label="Change syntax..." onPress={() => { setLangOpen(true); setActionSheetOpen(false); }} />
+                  <SheetRow icon="settings" label="Preferences..." onPress={() => { setPrefsOpen(true); setActionSheetOpen(false); }} />
+                </SheetSection>
+                <SheetSection title="Help">
+                  <SheetRow icon="info" label="About Notepad 3++" onPress={() => { setAboutOpen(true); setActionSheetOpen(false); }} />
+                </SheetSection>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         <Modal visible={tabMenuId !== null} transparent animationType="fade" onRequestClose={() => setTabMenuId(null)}>
           <Pressable onPress={() => setTabMenuId(null)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
             <Pressable onPress={() => undefined} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, overflow: "hidden", maxWidth: 320 }]}>
@@ -1483,6 +1552,13 @@ const styles = StyleSheet.create({
   dropdownLabel: { fontFamily: "Inter_500Medium", fontSize: 12 },
   dropdownHint: { fontFamily: "Inter_400Regular", fontSize: 10 },
   dropdownSeparator: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  sheetRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 48 },
+  sheetRowLabel: { fontFamily: "Inter_500Medium", fontSize: 16 },
+  sheetRowHint: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  sheetSectionTitle: { fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 0.8, paddingHorizontal: 16, paddingVertical: 8 },
+  sheetContainer: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "85%", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 16 },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 8, marginTop: 4 },
+  sheetScroll: { paddingBottom: 24 },
   modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },
