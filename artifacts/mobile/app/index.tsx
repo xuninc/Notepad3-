@@ -480,6 +480,7 @@ export default function NotepadScreen() {
   const [openMenu, setOpenMenu] = useState<null | "file" | "edit" | "view" | "tools" | "help">(null);
   const [menuBarBottom, setMenuBarBottom] = useState(24);
   const [menuItemLeft, setMenuItemLeft] = useState<Record<string, number>>({});
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [gotoOpen, setGotoOpen] = useState(false);
@@ -740,6 +741,11 @@ export default function NotepadScreen() {
               <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               <Ionicons name="document-text-outline" size={13} color={colors.primaryForeground} />
               <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.primaryForeground }]}>{activeNote.title} - Notepad 3++</Text>
+              {isMobile ? (
+                <Pressable onPress={() => setActionSheetOpen(true)} style={styles.titleBarMore} testID="title-more" hitSlop={10}>
+                  <Feather name="more-horizontal" size={18} color={colors.primaryForeground} />
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
@@ -1381,6 +1387,7 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   titleBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
   titleBarText: { fontFamily: "Inter_500Medium", fontSize: 12, flex: 1 },
+  titleBarMore: { paddingHorizontal: 8, paddingVertical: 4 },
   toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 3, borderBottomWidth: 1, gap: 1 },
   toolbarDouble: { alignItems: "stretch", paddingVertical: 2 },
   toolbarSep: { width: 1, height: 18, marginHorizontal: 3 },
