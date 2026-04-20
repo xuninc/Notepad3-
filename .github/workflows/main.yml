@@ -69,13 +69,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          POD_CMD="pod install"
           if [ -f Gemfile ]; then
             echo "==> Using bundler-pinned CocoaPods"
-            bundle exec pod install
+            POD_CMD="bundle exec pod install"
           else
             echo "==> Using system CocoaPods"
-            pod install
           fi
+          for i in 1 2 3; do
+            $POD_CMD && break || { echo "==> pod install failed (attempt $i), retrying in 30s..."; sleep 30; }
+          done
 
       - name: Resolve scheme name
         id: scheme
