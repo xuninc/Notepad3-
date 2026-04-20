@@ -1147,6 +1147,16 @@ export default function NotepadScreen() {
           </View>
         ) : null}
 
+        {!zenMode && isMobile ? (
+          <Pressable
+            onPress={() => { createNote(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+            style={({ pressed }) => [styles.mobileFab, { backgroundColor: colors.primary, bottom: 80 + (insets.bottom || 0), opacity: pressed ? 0.85 : 1 }]}
+            testID="mobile-fab-new"
+          >
+            <Feather name="plus" size={26} color={colors.primaryForeground} />
+          </Pressable>
+        ) : null}
+
         <Modal visible={actionSheetOpen} transparent animationType="slide" onRequestClose={() => setActionSheetOpen(false)}>
           <Pressable onPress={() => setActionSheetOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
             <Pressable onPress={() => undefined} style={[styles.sheetContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
@@ -1587,6 +1597,7 @@ const styles = StyleSheet.create({
   mobileBottomBar: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start", borderTopWidth: 1, paddingTop: 6, paddingHorizontal: 4, zIndex: 50 },
   mobileBottomBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, minHeight: 48 },
   mobileBottomLabel: { fontFamily: "Inter_500Medium", fontSize: 10, marginTop: 2 },
+  mobileFab: { position: "absolute", right: 16, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", zIndex: 60, shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
   modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 380, borderWidth: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, height: 28, borderBottomWidth: 1 },
