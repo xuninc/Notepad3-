@@ -8,11 +8,13 @@ type ThemePreference = ThemeName | "system";
 export type TabsLayout = "tabs" | "list";
 export type ToolbarRows = "single" | "double";
 export type LayoutMode = "classic" | "mobile";
+export type AccessoryRows = "single" | "double";
 
 const VALID: ThemePreference[] = ["classic", "light", "dark", "retro", "modern", "cyberpunk", "sunset", "custom", "system"];
 const VALID_TABS: TabsLayout[] = ["tabs", "list"];
 const VALID_ROWS: ToolbarRows[] = ["single", "double"];
 const VALID_LAYOUT: LayoutMode[] = ["classic", "mobile"];
+const VALID_ACCESSORY_ROWS: AccessoryRows[] = ["single", "double"];
 
 type ThemeContextValue = {
   themeName: ThemeName;
@@ -26,6 +28,8 @@ type ThemeContextValue = {
   setToolbarRows: (next: ToolbarRows) => void;
   layoutMode: LayoutMode;
   setLayoutMode: (mode: LayoutMode) => void;
+  accessoryRows: AccessoryRows;
+  setAccessoryRows: (rows: AccessoryRows) => void;
   customPalette: CustomPaletteOverrides;
   setCustomColor: (key: CustomPaletteKey, value: string) => void;
   resetCustomPalette: () => void;
@@ -39,6 +43,7 @@ const LABELS_KEY = "notepad3pp.toolbarLabels";
 const ROWS_KEY = "notepad3pp.toolbarRows";
 const CUSTOM_KEY = "notepad3pp.customPalette";
 const LAYOUT_KEY = "notepad3pp.layoutMode";
+const ACCESSORY_ROWS_KEY = "notepad3pp.accessoryRows";
 // Set on startup when we're about to render classic layout; cleared once we've stayed
 // alive long enough to know that render didn't crash. If we boot up and find this flag
 // still set, the previous attempt didn't survive — fall back to mobile so the app stays
@@ -65,6 +70,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const { width } = Dimensions.get("window");
     return width < 768 ? "mobile" : "classic";
   });
+  const [accessoryRows, setAccessoryRowsState] = useState<AccessoryRows>("single");
   const [customPalette, setCustomPaletteState] = useState<CustomPaletteOverrides>({});
 
   useEffect(() => {
@@ -119,6 +125,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => undefined);
+    AsyncStorage.getItem(ACCESSORY_ROWS_KEY)
+      .then((value) => {
+        if (value && (VALID_ACCESSORY_ROWS as string[]).includes(value)) setAccessoryRowsState(value as AccessoryRows);
+      })
+      .catch(() => undefined);
   }, []);
 
   const setPreference = (next: ThemePreference) => {
@@ -151,6 +162,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setAccessoryRows = (next: AccessoryRows) => {
+    setAccessoryRowsState(next);
+    AsyncStorage.setItem(ACCESSORY_ROWS_KEY, next).catch(() => undefined);
+  };
+
   useEffect(() => {
     if (layoutMode !== "classic") return;
     const t = setTimeout(() => {
@@ -177,8 +193,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const palette = themeName === "custom" ? buildCustomPalette(customPalette) : themes[themeName];
   void customDefaults;
   const value = useMemo<ThemeContextValue>(
-    () => ({ themeName, preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, customPalette, setCustomColor, resetCustomPalette, palette, radius: palette.radius ?? colorsModule.radius }),
-    [themeName, preference, tabsLayout, toolbarLabels, toolbarRows, layoutMode, customPalette, palette],
+    () => ({ themeName, preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, accessoryRows, setAccessoryRows, customPalette, setCustomColor, resetCustomPalette, palette, radius: palette.radius ?? colorsModule.radius }),
+    [themeName, preference, tabsLayout, toolbarLabels, toolbarRows, layoutMode, accessoryRows, customPalette, palette],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

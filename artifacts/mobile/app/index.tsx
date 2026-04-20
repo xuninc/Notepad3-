@@ -369,13 +369,11 @@ function DropdownSeparator() {
   return <View style={[styles.dropdownSeparator, { backgroundColor: colors.border }]} />;
 }
 
-function KbBtn({ icon, label, onPress, onLongPress, disabled, active, colors }: { icon: keyof typeof Feather.glyphMap; label?: string; onPress: () => void; onLongPress?: () => void; disabled?: boolean; active?: boolean; colors: ReturnType<typeof useColors> }) {
+function KbBtn({ icon, label, onPress, disabled, active, colors }: { icon: keyof typeof Feather.glyphMap; label?: string; onPress: () => void; disabled?: boolean; active?: boolean; colors: ReturnType<typeof useColors> }) {
   const tint = disabled ? colors.mutedForeground : active ? colors.primary : colors.foreground;
   return (
     <Pressable
       onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={300}
       disabled={disabled}
       style={({ pressed }) => [styles.kbBtn, { opacity: disabled ? 0.35 : pressed ? 0.55 : 1, backgroundColor: pressed ? colors.secondary : "transparent" }]}
       accessibilityRole="button"
@@ -383,6 +381,54 @@ function KbBtn({ icon, label, onPress, onLongPress, disabled, active, colors }: 
     >
       <Feather name={icon} size={18} color={tint} />
       {label ? <Text style={[styles.kbBtnLabel, { color: tint }]} numberOfLines={1}>{label}</Text> : null}
+    </Pressable>
+  );
+}
+
+function KbHoldBtn({ icon, label, onTick, colors }: { icon: keyof typeof Feather.glyphMap; label?: string; onTick: () => void; colors: ReturnType<typeof useColors> }) {
+  const tickRef = useRef(onTick);
+  tickRef.current = onTick;
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatsRef = useRef(0);
+
+  const stop = useCallback(() => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    repeatsRef.current = 0;
+  }, []);
+
+  useEffect(() => stop, [stop]);
+
+  const startRepeating = useCallback((delay: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      tickRef.current();
+      repeatsRef.current += 1;
+      if (repeatsRef.current === 6 && delay > 90) {
+        startRepeating(60);
+      } else if (repeatsRef.current === 3 && delay > 150) {
+        startRepeating(120);
+      }
+    }, delay);
+  }, []);
+
+  const handlePressIn = useCallback(() => {
+    tickRef.current();
+    repeatsRef.current = 0;
+    timeoutRef.current = setTimeout(() => startRepeating(220), 380);
+  }, [startRepeating]);
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPressOut={stop}
+      style={({ pressed }) => [styles.kbBtn, { opacity: pressed ? 0.55 : 1, backgroundColor: pressed ? colors.secondary : "transparent" }]}
+      accessibilityRole="button"
+      accessibilityLabel={label ?? icon}
+    >
+      <Feather name={icon} size={18} color={colors.foreground} />
+      {label ? <Text style={[styles.kbBtnLabel, { color: colors.foreground }]} numberOfLines={1}>{label}</Text> : null}
     </Pressable>
   );
 }
@@ -494,7 +540,7 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, accessoryRows, setAccessoryRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
   const isMobile = layoutMode === "mobile";
   const [toolbarTip, setToolbarTip] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1235,33 +1281,58 @@ export default function NotepadScreen() {
           </Pressable>
         ) : null}
 
-        {isMobile && keyboardVisible ? (
-          <KeyboardStickyView style={[styles.kbAccessory, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
-              <KbBtn icon="chevron-down" label="Hide" onPress={() => Keyboard.dismiss()} colors={colors} />
-              <KbSep colors={colors} />
-              <KbBtn icon="corner-up-left" label="Undo" onPress={handleUndo} disabled={!canUndo} colors={colors} />
-              <KbBtn icon="corner-up-right" label="Redo" onPress={handleRedo} disabled={!canRedo} colors={colors} />
-              <KbSep colors={colors} />
-              <KbBtn icon="scissors" label="Cut" onPress={cutSelection} disabled={selection.end <= selection.start} colors={colors} />
-              <KbBtn icon="clipboard" label="Copy" onPress={copySelection} colors={colors} />
-              <KbBtn icon="download" label="Paste" onPress={pasteFromClipboard} colors={colors} />
-              <KbSep colors={colors} />
-              <KbBtn icon="arrow-left" onPress={() => moveCursorBy(-1)} onLongPress={() => moveCursorBy(-10)} colors={colors} />
-              <KbBtn icon="arrow-up" onPress={() => moveCursorVertical(-1)} colors={colors} />
-              <KbBtn icon="arrow-down" onPress={() => moveCursorVertical(1)} colors={colors} />
-              <KbBtn icon="arrow-right" onPress={() => moveCursorBy(1)} onLongPress={() => moveCursorBy(10)} colors={colors} />
-              <KbSep colors={colors} />
-              <KbBtn icon="search" label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); }} active={findOpen && !replaceOpen} colors={colors} />
-              <KbBtn icon="repeat" label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); }} active={replaceOpen} colors={colors} />
-              <KbSep colors={colors} />
-              <KbBtn icon="clock" label="Date" onPress={() => insertTextAtSelection(new Date().toLocaleString())} colors={colors} />
-              <KbBtn icon="list" label="Docs" onPress={() => setTabListOpen(true)} colors={colors} />
-              <KbBtn icon="columns" label="Compare" onPress={toggleCompare} active={compareOpen} colors={colors} />
-              <KbBtn icon="more-horizontal" label="More" onPress={() => setActionSheetOpen(true)} colors={colors} />
-            </ScrollView>
-          </KeyboardStickyView>
-        ) : null}
+        {isMobile && keyboardVisible ? (() => {
+          type Item = { kind: "btn"; node: React.ReactNode } | { kind: "sep" };
+          const sep: Item = { kind: "sep" };
+          const items: Item[] = [
+            { kind: "btn", node: <KbBtn icon="chevron-down" label="Hide" onPress={() => Keyboard.dismiss()} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon={readMode ? "eye" : "eye-off"} label="Read" onPress={() => setReadMode((c) => !c)} active={readMode} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="corner-up-left" label="Undo" onPress={handleUndo} disabled={!canUndo} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="corner-up-right" label="Redo" onPress={handleRedo} disabled={!canRedo} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="scissors" label="Cut" onPress={cutSelection} disabled={selection.end <= selection.start} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="clipboard" label="Copy" onPress={copySelection} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="download" label="Paste" onPress={pasteFromClipboard} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbHoldBtn icon="arrow-left" onTick={() => moveCursorBy(-1)} colors={colors} /> },
+            { kind: "btn", node: <KbHoldBtn icon="arrow-up" onTick={() => moveCursorVertical(-1)} colors={colors} /> },
+            { kind: "btn", node: <KbHoldBtn icon="arrow-down" onTick={() => moveCursorVertical(1)} colors={colors} /> },
+            { kind: "btn", node: <KbHoldBtn icon="arrow-right" onTick={() => moveCursorBy(1)} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="search" label="Find" onPress={() => { setFindOpen(true); setReplaceOpen(false); }} active={findOpen && !replaceOpen} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="repeat" label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); }} active={replaceOpen} colors={colors} /> },
+            sep,
+            { kind: "btn", node: <KbBtn icon="clock" label="Date" onPress={() => insertTextAtSelection(new Date().toLocaleString())} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="list" label="Docs" onPress={() => setTabListOpen(true)} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="columns" label="Compare" onPress={toggleCompare} active={compareOpen} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="more-horizontal" label="More" onPress={() => setActionSheetOpen(true)} colors={colors} /> },
+          ];
+          const renderItem = (it: Item, idx: number) => it.kind === "sep" ? <KbSep key={`sep-${idx}`} colors={colors} /> : <React.Fragment key={`itm-${idx}`}>{it.node}</React.Fragment>;
+          if (accessoryRows === "double") {
+            const half = Math.ceil(items.length / 2);
+            const top = items.slice(0, half);
+            const bot = items.slice(half);
+            return (
+              <KeyboardStickyView style={[styles.kbAccessory, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
+                  {top.map(renderItem)}
+                </ScrollView>
+                <View style={[styles.kbAccessoryRowSep, { backgroundColor: colors.border }]} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
+                  {bot.map(renderItem)}
+                </ScrollView>
+              </KeyboardStickyView>
+            );
+          }
+          return (
+            <KeyboardStickyView style={[styles.kbAccessory, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.kbAccessoryRow}>
+                {items.map(renderItem)}
+              </ScrollView>
+            </KeyboardStickyView>
+          );
+        })() : null}
 
         <Modal visible={actionSheetOpen} transparent animationType="slide" onRequestClose={() => setActionSheetOpen(false)}>
           <Pressable onPress={() => setActionSheetOpen(false)} style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
@@ -1532,7 +1603,22 @@ export default function NotepadScreen() {
                     <Text style={[styles.prefRowHint, { color: toolbarLabels ? colors.primaryForeground : colors.mutedForeground }]}>Always visible labels for every toolbar button</Text>
                   </View>
                 </Pressable>
-                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Choices are saved on this device.</Text>
+                <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Keyboard accessory</Text>
+                {([{ id: "single" as const, label: "Single row", hint: "Scroll horizontally above the keyboard" }, { id: "double" as const, label: "Two rows", hint: "More icons visible at once, taller bar" }]).map((opt) => {
+                  const selected = accessoryRows === opt.id;
+                  return (
+                    <Pressable key={opt.id} onPress={() => setAccessoryRows(opt.id)} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID={`accessory-rows-${opt.id}`}>
+                      <View style={[styles.radio, { borderColor: selected ? colors.primaryForeground : colors.foreground }]}>
+                        {selected ? <View style={[styles.radioDot, { backgroundColor: colors.primaryForeground }]} /> : null}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{opt.label}</Text>
+                        <Text style={[styles.prefRowHint, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{opt.hint}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Hold an arrow on the keyboard accessory to repeat. Choices are saved on this device.</Text>
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -1718,6 +1804,7 @@ const styles = StyleSheet.create({
   mobileFab: { position: "absolute", right: 16, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", zIndex: 60, shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
   kbAccessory: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopWidth: 1, zIndex: 80 },
   kbAccessoryRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingVertical: 4, gap: 2 },
+  kbAccessoryRowSep: { height: StyleSheet.hairlineWidth },
   kbBtn: { minWidth: 38, paddingHorizontal: 6, paddingVertical: 4, alignItems: "center", justifyContent: "center", borderRadius: 4 },
   kbBtnLabel: { fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 1 },
   kbSep: { width: 1, height: 22, marginHorizontal: 2 },
