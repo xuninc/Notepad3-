@@ -1,16 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { useColorScheme } from "react-native";
+import { Dimensions, useColorScheme } from "react-native";
 
 import colorsModule, { buildCustomPalette, CustomPaletteKey, CustomPaletteOverrides, customDefaults, Palette, themes, ThemeName } from "@/constants/colors";
 
 type ThemePreference = ThemeName | "system";
 export type TabsLayout = "tabs" | "list";
 export type ToolbarRows = "single" | "double";
+export type LayoutMode = "classic" | "mobile";
 
 const VALID: ThemePreference[] = ["classic", "light", "dark", "retro", "modern", "cyberpunk", "sunset", "custom", "system"];
 const VALID_TABS: TabsLayout[] = ["tabs", "list"];
 const VALID_ROWS: ToolbarRows[] = ["single", "double"];
+const VALID_LAYOUT: LayoutMode[] = ["classic", "mobile"];
 
 type ThemeContextValue = {
   themeName: ThemeName;
@@ -22,6 +24,8 @@ type ThemeContextValue = {
   setToolbarLabels: (next: boolean) => void;
   toolbarRows: ToolbarRows;
   setToolbarRows: (next: ToolbarRows) => void;
+  layoutMode: LayoutMode;
+  setLayoutMode: (mode: LayoutMode) => void;
   customPalette: CustomPaletteOverrides;
   setCustomColor: (key: CustomPaletteKey, value: string) => void;
   resetCustomPalette: () => void;
@@ -34,6 +38,7 @@ const TABS_KEY = "notepad3pp.tabsLayout.v2";
 const LABELS_KEY = "notepad3pp.toolbarLabels";
 const ROWS_KEY = "notepad3pp.toolbarRows";
 const CUSTOM_KEY = "notepad3pp.customPalette";
+const LAYOUT_KEY = "notepad3pp.layoutMode";
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
@@ -43,6 +48,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [tabsLayout, setTabsLayoutState] = useState<TabsLayout>("tabs");
   const [toolbarLabels, setToolbarLabelsState] = useState<boolean>(false);
   const [toolbarRows, setToolbarRowsState] = useState<ToolbarRows>("single");
+  const [layoutMode, setLayoutModeState] = useState<LayoutMode>(() => {
+    const { width } = Dimensions.get("window");
+    return width < 768 ? "mobile" : "classic";
+  });
   const [customPalette, setCustomPaletteState] = useState<CustomPaletteOverrides>({});
 
   useEffect(() => {
@@ -68,6 +77,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     AsyncStorage.getItem(ROWS_KEY)
       .then((value) => {
         if (value && (VALID_ROWS as string[]).includes(value)) setToolbarRowsState(value as ToolbarRows);
+      })
+      .catch(() => undefined);
+    AsyncStorage.getItem(LAYOUT_KEY)
+      .then((value) => {
+        if (value && (VALID_LAYOUT as string[]).includes(value)) {
+          setLayoutModeState(value as LayoutMode);
+        }
       })
       .catch(() => undefined);
     AsyncStorage.getItem(CUSTOM_KEY)
@@ -103,6 +119,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(ROWS_KEY, next).catch(() => undefined);
   };
 
+  const setLayoutMode = (next: LayoutMode) => {
+    setLayoutModeState(next);
+    AsyncStorage.setItem(LAYOUT_KEY, next).catch(() => undefined);
+  };
+
   const setCustomColor = (key: CustomPaletteKey, value: string) => {
     setCustomPaletteState((prev) => {
       const next = { ...prev, [key]: value };
@@ -121,8 +142,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const palette = themeName === "custom" ? buildCustomPalette(customPalette) : themes[themeName];
   void customDefaults;
   const value = useMemo<ThemeContextValue>(
-    () => ({ themeName, preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, customPalette, setCustomColor, resetCustomPalette, palette, radius: palette.radius ?? colorsModule.radius }),
-    [themeName, preference, tabsLayout, toolbarLabels, toolbarRows, customPalette, palette],
+    () => ({ themeName, preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, customPalette, setCustomColor, resetCustomPalette, palette, radius: palette.radius ?? colorsModule.radius }),
+    [themeName, preference, tabsLayout, toolbarLabels, toolbarRows, layoutMode, customPalette, palette],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
