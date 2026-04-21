@@ -26,6 +26,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller";
 
 import { CUSTOM_PALETTE_KEYS, customDefaults, customPaletteLabels, CustomPaletteKey } from "@/constants/colors";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
@@ -77,6 +78,10 @@ const codeKeywords = new Set(
 );
 
 const MouseContext = createContext<MouseRegistry>({ enabled: false, set: () => {}, remove: () => {} });
+
+function SectionFallback() {
+  return null;
+}
 
 function MTarget({ id, onPress, children }: { id: string; onPress: () => void; children: React.ReactNode }) {
   const reg = useContext(MouseContext);
@@ -894,28 +899,30 @@ export default function NotepadScreen() {
           ) : null}
 
           {!zenMode && !isMobile ? (
-            <View
-              style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
-              onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
-            >
-              <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-              {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
-                <MTarget key={id} id={`menu-${id}`} onPress={() => setOpenMenu((current) => (current === id ? null : id))}>
-                  <Pressable
-                    onPress={() => setOpenMenu((current) => (current === id ? null : id))}
-                    onLayout={(e) => setMenuItemLeft((prev) => (prev[id] === e.nativeEvent.layout.x ? prev : { ...prev, [id]: e.nativeEvent.layout.x }))}
-                    style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]}
-                    testID={`menu-${id}`}
-                  >
-                    <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
-                  </Pressable>
-                </MTarget>
-              ))}
-            </View>
+            <ErrorBoundary section="classic-menubar" FallbackComponent={SectionFallback}>
+              <View
+                style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
+                onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+              >
+                <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
+                  <MTarget key={id} id={`menu-${id}`} onPress={() => setOpenMenu((current) => (current === id ? null : id))}>
+                    <Pressable
+                      onPress={() => setOpenMenu((current) => (current === id ? null : id))}
+                      onLayout={(e) => setMenuItemLeft((prev) => (prev[id] === e.nativeEvent.layout.x ? prev : { ...prev, [id]: e.nativeEvent.layout.x }))}
+                      style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]}
+                      testID={`menu-${id}`}
+                    >
+                      <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
+                    </Pressable>
+                  </MTarget>
+                ))}
+              </View>
+            </ErrorBoundary>
           ) : null}
 
           {openMenu && !isMobile ? (
-            <>
+            <ErrorBoundary section="classic-dropdown" FallbackComponent={SectionFallback}>
               <Pressable onPress={() => setOpenMenu(null)} style={[styles.menuOverlay, { top: menuBarBottom }]} />
               <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: menuItemLeft[openMenu] ?? 0, top: menuBarBottom + 2 }]}>
                 {openMenu === "file" ? (
@@ -994,10 +1001,12 @@ export default function NotepadScreen() {
                   </>
                 ) : null}
               </View>
-            </>
+            </ErrorBoundary>
           ) : null}
 
-          {!zenMode && toolbarOpen && !isMobile ? (() => {
+          {!zenMode && toolbarOpen && !isMobile ? (
+            <ErrorBoundary section="classic-toolbar" FallbackComponent={SectionFallback}>
+              {(() => {
             type TbItem = { kind: "btn"; id: string; icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; color: string } | { kind: "sep" };
             const items: TbItem[] = [
               { kind: "btn", id: "tb-new", icon: "file-plus", label: "New", onPress: createNote, color: colors.foreground },
@@ -1063,16 +1072,20 @@ export default function NotepadScreen() {
                 <IconButton id="tb-collapse" icon="chevron-up" color={colors.foreground} onPress={() => setToolbarOpen(false)} label="Hide toolbar" onLongPress={showTip} />
               </View>
             );
-          })() : null}
+          })()}
+            </ErrorBoundary>
+          ) : null}
 
           {!zenMode && !toolbarOpen && !isMobile ? (
-            <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
-              <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-              <Pressable onPress={() => setToolbarOpen(true)} style={styles.toolbarStripPress}>
-                <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
-                <Text style={[styles.toolbarStripText, { color: colors.mutedForeground }]}>Show toolbar</Text>
-              </Pressable>
-            </View>
+            <ErrorBoundary section="classic-toolbar-strip" FallbackComponent={SectionFallback}>
+              <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
+                <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <Pressable onPress={() => setToolbarOpen(true)} style={styles.toolbarStripPress}>
+                  <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
+                  <Text style={[styles.toolbarStripText, { color: colors.mutedForeground }]}>Show toolbar</Text>
+                </Pressable>
+              </View>
+            </ErrorBoundary>
           ) : null}
 
           {!zenMode ? (
@@ -1189,7 +1202,11 @@ export default function NotepadScreen() {
             ) : (
               <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={styles.editorRow}>
-                  {!isMobile ? <EditorGutter lineCount={stats.lines} /> : null}
+                  {!isMobile ? (
+                    <ErrorBoundary section="classic-gutter" FallbackComponent={SectionFallback}>
+                      <EditorGutter lineCount={stats.lines} />
+                    </ErrorBoundary>
+                  ) : null}
                   <TextInput editable={!readMode} value={activeNote.body} onChangeText={(body) => updateActiveNote({ body })} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} spellCheck={false} style={[styles.editorInput, { color: colors.foreground }, isMobile ? { fontSize: 16, lineHeight: 24 } : null]} placeholder="Start typing..." placeholderTextColor={colors.mutedForeground} selection={selection} onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)} testID="editor-input" />
                 </View>
                 <SyntaxPreview note={activeNote} />
