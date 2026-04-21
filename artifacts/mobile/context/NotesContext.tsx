@@ -39,15 +39,41 @@ interface NotesContextValue {
 }
 
 const storageKey = "pocketpad-notes-v1";
+const STARTER_KEY = "notepad3pp.starterContent";
+export type StarterContent = "welcome" | "blank";
+
+const welcomeBody = "Welcome to Notepad 3++\n\nA fast iPhone text editor with the feel of classic desktop notepad utilities.\n\nTry this:\n- Switch between mobile and classic layouts in View > Switch layout\n- Tools > Preferences to switch theme or layout\n- File > Open from Files... to open any file\n- View > Compare documents for a top/bottom diff\n- Edit > line tools without leaving the editor\n\nEverything autosaves locally on this device.";
 
 const starterNote: NoteDocument = {
   id: "welcome",
   title: "scratchpad.txt",
-  body: "Welcome to Notepad 3++\n\nA fast iPhone text editor with the look of Notepad2 and the tools of Notepad++.\n\nTry this:\n- Open the menu bar above (File / Edit / View / Tools / Help)\n- Tools > Preferences to switch theme (Classic, Light, Dark, or Match system)\n- File > Open from Files... to import a file\n- View > Compare documents for a top/bottom diff\n- Edit > line tools without leaving the editor\n\nEverything autosaves locally on this device.",
+  body: welcomeBody,
   createdAt: Date.now(),
   updatedAt: Date.now(),
   language: "Plain",
 };
+
+const blankStarterNote: NoteDocument = {
+  ...starterNote,
+  body: "",
+};
+
+export async function getStarterContent(): Promise<StarterContent> {
+  try {
+    const v = await AsyncStorage.getItem(STARTER_KEY);
+    return v === "blank" ? "blank" : "welcome";
+  } catch {
+    return "welcome";
+  }
+}
+
+export async function setStarterContent(value: StarterContent): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STARTER_KEY, value);
+  } catch {
+    // ignore
+  }
+}
 
 const NotesContext = createContext<NotesContextValue | null>(null);
 
@@ -81,8 +107,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.getItem(storageKey)
-      .then((stored) => {
+    Promise.all([AsyncStorage.getItem(storageKey), AsyncStorage.getItem(STARTER_KEY)])
+      .then(([stored, starterPref]) => {
         if (!mounted) return;
         if (stored) {
           const parsed = JSON.parse(stored) as { notes: NoteDocument[]; activeId?: string };
@@ -90,7 +116,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           if (migrated.length > 0) {
             setNotes(migrated);
             setActiveIdState(parsed.activeId && migrated.some((note) => note.id === parsed.activeId) ? parsed.activeId : migrated[0].id);
+            return;
           }
+        }
+        if (starterPref === "blank") {
+          setNotes([blankStarterNote]);
+          setActiveIdState(blankStarterNote.id);
         }
       })
       .finally(() => {
