@@ -19,7 +19,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: windowScene)
         let store = NotesStore.shared
         let editor = EditorViewController(store: store)
-        window.rootViewController = editor
+        let nav = UINavigationController(rootViewController: editor)
+        window.rootViewController = nav
         window.makeKeyAndVisible()
         self.window = window
     }
