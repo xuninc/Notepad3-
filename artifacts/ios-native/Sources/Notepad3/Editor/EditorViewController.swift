@@ -2,16 +2,18 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// Top-level editor surface. Hosts a horizontal tab strip above a UITextView,
-/// plus navigation-bar buttons for new / open / more. All content flows through
-/// `NotesStore` — the VC is a view over store state and reacts to mutations via
-/// the observer token.
+/// plus navigation-bar buttons for new / open / theme / more. All content
+/// flows through `NotesStore`; visuals flow through `ThemeController`.
 final class EditorViewController: UIViewController, UITextViewDelegate {
     private let store: NotesStore
+    private let themes = ThemeController.shared
     private let tabStrip = TabStripView()
     private let separator = UIView()
     private let textView = UITextView()
-    private var observerToken: UUID?
-    private var palette: Palette = .light
+    private var notesToken: UUID?
+    private var themeToken: UUID?
+    private var lastHighlightedBody: String = ""
+    private var lastHighlightedLanguage: NoteLanguage = .plain
 
     init(store: NotesStore) {
         self.store = store
@@ -32,14 +34,25 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         textView.text = store.activeNote.body
         title = store.activeNote.title
         tabStrip.reload(notes: store.notes, activeId: store.activeId)
+        rehighlight(force: true)
 
-        observerToken = store.observe { [weak self] in
-            self?.syncFromStore()
-        }
+        notesToken = store.observe { [weak self] in self?.syncFromStore() }
+        themeToken = themes.observe { [weak self] in self?.applyPalette() }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        themes.updateSystemStyle(isDark: traitCollection.userInterfaceStyle == .dark)
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        themes.updateSystemStyle(isDark: traitCollection.userInterfaceStyle == .dark)
     }
 
     deinit {
-        if let token = observerToken { store.unobserve(token) }
+        if let t = notesToken { store.unobserve(t) }
+        if let t = themeToken { themes.unobserve(t) }
     }
 
     // MARK: - Configuration
@@ -101,6 +114,14 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         )
         newButton.accessibilityLabel = "New document"
 
+        let themeButton = UIBarButtonItem(
+            image: themeIconForCurrentMode(),
+            style: .plain,
+            target: self,
+            action: #selector(toggleTheme)
+        )
+        themeButton.accessibilityLabel = "Toggle light / dark"
+
         let moreButton = UIBarButtonItem(
             image: UIImage(systemName: "ellipsis.circle"),
             primaryAction: nil,
@@ -108,7 +129,12 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         )
         moreButton.accessibilityLabel = "More actions"
 
-        navigationItem.rightBarButtonItems = [moreButton, newButton]
+        navigationItem.rightBarButtonItems = [moreButton, themeButton, newButton]
+    }
+
+    private func themeIconForCurrentMode() -> UIImage? {
+        // Show the inverse icon — sun when dark (to flip to light), moon when light.
+        UIImage(systemName: themes.resolvedTheme == .dark ? "sun.max" : "moon")
     }
 
     private func newDocumentMenu() -> UIMenu {
@@ -122,6 +148,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func moreMenu() -> UIMenu {
+        let prefs = UIAction(title: "Preferences…", image: UIImage(systemName: "gear")) { [weak self] _ in
+            self?.presentSettings()
+        }
         let duplicate = UIAction(title: "Duplicate current", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in
             guard let self else { return }
             self.store.duplicate(id: self.store.activeId)
@@ -134,15 +163,26 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             guard let self else { return }
             self.confirmClose(self.store.activeId)
         }
-        return UIMenu(title: "", children: [duplicate, rename, close])
+        return UIMenu(title: "", children: [prefs, duplicate, rename, close])
+    }
+
+    @objc private func toggleTheme() {
+        themes.quickToggleDarkLight()
+    }
+
+    private func presentSettings() {
+        let settings = SettingsViewController()
+        let nav = UINavigationController(rootViewController: settings)
+        present(nav, animated: true)
     }
 
     // MARK: - Theme
 
     private func applyPalette() {
+        let palette = themes.palette
+
         view.backgroundColor = palette.background
         textView.backgroundColor = palette.editorBackground
-        textView.textColor = palette.foreground
         textView.tintColor = palette.primary
         separator.backgroundColor = palette.border
         tabStrip.applyPalette(palette)
@@ -154,13 +194,18 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         navigationItem.standardAppearance = nav
         navigationItem.scrollEdgeAppearance = nav
         navigationController?.navigationBar.tintColor = palette.primary
+
+        // Sun/moon icon flips with resolved mode
+        if let items = navigationItem.rightBarButtonItems, items.count >= 2 {
+            items[1].image = themeIconForCurrentMode()
+        }
+
+        // Repaint the existing text with the new palette colors
+        rehighlight(force: true)
     }
 
     // MARK: - Store sync
 
-    /// Pull state into the view after a store change. Never overwrite the
-    /// text view while the user is mid-typing (matches body already means
-    /// the textViewDidChange->updateActive round-trip just happened).
     private func syncFromStore() {
         let note = store.activeNote
         if textView.text != note.body {
@@ -171,19 +216,35 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         }
         title = note.title
         tabStrip.reload(notes: store.notes, activeId: store.activeId)
+        rehighlight(force: true)
+    }
+
+    // MARK: - Highlighting
+
+    /// Re-run the highlighter. `force` forgets the last-highlighted cache so
+    /// theme/palette changes re-paint even if body/language are unchanged.
+    private func rehighlight(force: Bool = false) {
+        let body = textView.text ?? ""
+        let language = store.activeNote.language
+        if !force && body == lastHighlightedBody && language == lastHighlightedLanguage {
+            return
+        }
+        SyntaxHighlighter.apply(to: textView, language: language, palette: themes.palette)
+        lastHighlightedBody = body
+        lastHighlightedLanguage = language
     }
 
     // MARK: - UITextViewDelegate
 
     func textViewDidChange(_ textView: UITextView) {
         store.updateActive(body: textView.text)
+        rehighlight()
     }
 
     // MARK: - Actions
 
     private func confirmClose(_ id: String) {
         guard let note = store.notes.first(where: { $0.id == id }) else { return }
-        // Skip the confirm when the doc is empty — nothing to lose.
         if note.body.isEmpty {
             store.delete(id: id)
             return
@@ -222,8 +283,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
 extension EditorViewController: UIDocumentPickerDelegate {
     fileprivate func presentFileOpen() {
-        // `.item` = any file type. `asCopy: true` copies into our sandbox so we
-        // don't have to juggle security-scoped URLs after the picker dismisses.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
         picker.delegate = self
         picker.allowsMultipleSelection = false
@@ -234,8 +293,6 @@ extension EditorViewController: UIDocumentPickerDelegate {
         guard let url = urls.first else { return }
         do {
             let data = try Data(contentsOf: url)
-            // Try UTF-8 first, fall back to Latin-1 which decodes any byte sequence
-            // — so "open any file type" produces something readable even for binary.
             let text = String(data: data, encoding: .utf8)
                 ?? String(data: data, encoding: .isoLatin1)
                 ?? ""
