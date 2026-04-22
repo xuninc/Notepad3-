@@ -107,6 +107,11 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         themes.updateSystemStyle(isDark: traitCollection.userInterfaceStyle == .dark)
+        // Classic mode got as far as being visible; give StartupGuard the
+        // all-clear so the next launch doesn't force a fallback.
+        if prefs.layoutMode == .classic {
+            StartupGuard.scheduleRenderSurvivalClear()
+        }
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -188,7 +193,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
     private func configureMobileChrome() {
         mobileBottomBar.translatesAutoresizingMaskIntoConstraints = false
-        mobileBottomBar.onOpen = { [weak self] in Haptics.selectionChanged(); self?.presentOpenMenu() }
+        mobileBottomBar.onOpen = { [weak self] in Haptics.selectionChanged(); self?.presentDocsList() }
         mobileBottomBar.onFind = { [weak self] in Haptics.selectionChanged(); self?.toggleFind() }
         mobileBottomBar.onCompare = { [weak self] in Haptics.selectionChanged(); self?.presentCompare() }
         mobileBottomBar.onNew = { [weak self] in Haptics.impact(.light); self?.store.createBlank() }
@@ -225,7 +230,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private func wireAeroMenuBar() {
         aeroMenuBar.onNew = { [weak self] in self?.store.createBlank() }
         aeroMenuBar.onOpen = { [weak self] in self?.presentFileOpen() }
-        aeroMenuBar.onSave = { /* notes auto-save to disk; no explicit action */ }
+        aeroMenuBar.onSave = { [weak self] in self?.flashSavedIndicator() }
         aeroMenuBar.onDuplicateDoc = { [weak self] in guard let self else { return }; self.store.duplicate(id: self.store.activeId) }
         aeroMenuBar.onClose = { [weak self] in guard let self else { return }; self.confirmClose(self.store.activeId) }
         aeroMenuBar.onCloseOthers = { [weak self] in guard let self else { return }; self.store.closeOthers(keep: self.store.activeId) }
@@ -272,7 +277,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private func wireClassicToolbar() {
         classicToolbar.onNew = { [weak self] in self?.store.createBlank() }
         classicToolbar.onOpen = { [weak self] in self?.presentFileOpen() }
-        classicToolbar.onSave = { /* notes auto-save to disk */ }
+        classicToolbar.onSave = { [weak self] in self?.flashSavedIndicator() }
         classicToolbar.onCut = { [weak self] in self?.cutSelection() }
         classicToolbar.onCopy = { [weak self] in self?.copySelection() }
         classicToolbar.onPaste = { [weak self] in self?.pasteFromClipboard() }
@@ -1094,24 +1099,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         present(docs, animated: true)
     }
 
-    /// Small quick-file menu shown when the mobile bottom bar's "Open" is
-    /// tapped. One tap away from New blank OR Open-from-Files, plus the
-    /// list of already-open docs.
-    private func presentOpenMenu() {
-        let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "New blank", style: .default) { [weak self] _ in self?.store.createBlank() })
-        alert.addAction(UIAlertAction(title: "Open from Files…", style: .default) { [weak self] _ in self?.presentFileOpen() })
-        if store.notes.count > 1 {
-            for note in store.notes where note.id != store.activeId {
-                alert.addAction(UIAlertAction(title: note.title, style: .default) { [weak self] _ in
-                    self?.store.setActive(note.id)
-                })
-            }
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
-    }
-
     private func presentMobileMore() {
         let sections: [SheetSection] = [
             SheetSection(title: "File", rows: [
@@ -1164,6 +1151,35 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         ]
         let sheet = MobileActionSheet(sections: sections, palette: themes.palette)
         present(sheet, animated: true)
+    }
+
+    /// Menus and toolbars surface a "Save" action for familiarity even
+    /// though the store autosaves on every edit. Rather than leaving the
+    /// callback empty (misleading) we flash a transient banner to confirm.
+    private func flashSavedIndicator() {
+        Haptics.success()
+        let banner = UILabel()
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        banner.text = "Saved"
+        banner.font = .systemFont(ofSize: 13, weight: .semibold)
+        banner.textAlignment = .center
+        banner.textColor = themes.palette.primaryForeground
+        banner.backgroundColor = themes.palette.success
+        banner.layer.cornerRadius = 12
+        banner.layer.masksToBounds = true
+        banner.alpha = 0
+        view.addSubview(banner)
+        NSLayoutConstraint.activate([
+            banner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            banner.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -100),
+            banner.widthAnchor.constraint(equalToConstant: 120),
+            banner.heightAnchor.constraint(equalToConstant: 28),
+        ])
+        UIView.animate(withDuration: 0.2, animations: { banner.alpha = 0.95 }) { _ in
+            UIView.animate(withDuration: 0.3, delay: 1.0, options: [], animations: { banner.alpha = 0 }) { _ in
+                banner.removeFromSuperview()
+            }
+        }
     }
 
     private func presentAbout() {

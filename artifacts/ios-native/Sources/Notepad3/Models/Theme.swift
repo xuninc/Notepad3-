@@ -241,6 +241,12 @@ extension Palette {
         if let c = color(for: overrides["border"]) { out.border = c }
         if let c = color(for: overrides["editorBackground"]) { out.editorBackground = c }
         if let c = color(for: overrides["editorGutter"]) { out.editorGutter = c }
+        if let c = color(for: overrides["destructive"]) { out.destructive = c }
+        if let c = color(for: overrides["success"]) { out.success = c }
+        if let c = color(for: overrides["titleGradientStart"]) { out.titleGradientStart = c }
+        if let c = color(for: overrides["titleGradientEnd"]) { out.titleGradientEnd = c }
+        if let c = color(for: overrides["chromeGradientStart"]) { out.chromeGradientStart = c }
+        if let c = color(for: overrides["chromeGradientEnd"]) { out.chromeGradientEnd = c }
         return out
     }
 }

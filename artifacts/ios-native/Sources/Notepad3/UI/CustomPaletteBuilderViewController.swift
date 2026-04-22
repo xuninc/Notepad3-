@@ -32,6 +32,12 @@ final class CustomPaletteBuilderViewController: UIViewController,
         .init(key: "border",             label: "Borders",           hint: "Frames and dividers"),
         .init(key: "editorBackground",   label: "Editor",            hint: "Text editing surface"),
         .init(key: "editorGutter",       label: "Editor gutter",     hint: "Line number column"),
+        .init(key: "destructive",        label: "Destructive",       hint: "Delete / error tint"),
+        .init(key: "success",            label: "Success",           hint: "Import / apply / success badge"),
+        .init(key: "titleGradientStart", label: "Title bar top",     hint: "Classic window caption top color"),
+        .init(key: "titleGradientEnd",   label: "Title bar bottom",  hint: "Classic window caption bottom color"),
+        .init(key: "chromeGradientStart",label: "Toolbar top",       hint: "Classic toolbar gradient top"),
+        .init(key: "chromeGradientEnd",  label: "Toolbar bottom",    hint: "Classic toolbar gradient bottom"),
     ]
 
     struct Field {

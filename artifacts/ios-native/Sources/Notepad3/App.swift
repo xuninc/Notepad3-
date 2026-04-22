@@ -16,6 +16,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
+
+        // Crash-loop safety net: if the previous run got as far as choosing
+        // classic mode but didn't survive the first render, fall back to
+        // mobile BEFORE we build the UI. See StartupGuard.
+        StartupGuard.verifyLayoutModeAtStartup(Preferences.shared)
+
         let window = UIWindow(windowScene: windowScene)
         let store = NotesStore.shared
         let editor = EditorViewController(store: store)
