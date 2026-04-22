@@ -742,7 +742,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         guard sel.length > 0 else { findNext(backwards: false); return }
         let ns = (textView.text ?? "") as NSString
         let updated = ns.replacingCharacters(in: sel, with: replacement) as String
-        commitReplacement(updated, selectionAfter: NSRange(location: sel.location + (replacement as NSString).length, length: 0))
+        commitReplacement(updated, selectionAfter: NSRange(location: sel.location + (replacement as NSString).length, length: 0), actionName: "Replace")
         findNext(backwards: false)
     }
 
@@ -751,10 +751,22 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         guard !needle.isEmpty else { return }
         let ns = (textView.text ?? "") as NSString
         let updated = ns.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive], range: NSRange(location: 0, length: ns.length))
-        commitReplacement(updated, selectionAfter: NSRange(location: 0, length: 0))
+        commitReplacement(updated, selectionAfter: NSRange(location: 0, length: 0), actionName: "Replace All")
     }
 
-    private func commitReplacement(_ newBody: String, selectionAfter: NSRange) {
+    private func commitReplacement(_ newBody: String, selectionAfter: NSRange, actionName: String? = nil) {
+        let oldBody = textView.text ?? ""
+        let oldSelection = textView.selectedRange
+
+        // Register undo so shake-to-undo (and the menu Undo item) reverses
+        // programmatic mutations like sort / trim / replace / duplicate line.
+        if let undoManager = textView.undoManager {
+            undoManager.registerUndo(withTarget: self) { target in
+                target.commitReplacement(oldBody, selectionAfter: oldSelection, actionName: actionName)
+            }
+            if let actionName { undoManager.setActionName(actionName) }
+        }
+
         textView.text = newBody
         let len = (newBody as NSString).length
         let clampedLoc = min(selectionAfter.location, len)
@@ -772,7 +784,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let sorted = body.split(separator: "\n", omittingEmptySubsequences: false)
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
             .joined(separator: "\n")
-        commitReplacement(sorted, selectionAfter: NSRange(location: 0, length: 0))
+        commitReplacement(sorted, selectionAfter: NSRange(location: 0, length: 0), actionName: "Sort Lines")
         Haptics.impact(.medium)
     }
 
@@ -781,7 +793,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let trimmed = body.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.replacingOccurrences(of: #"[ \t]+$"#, with: "", options: .regularExpression) }
             .joined(separator: "\n")
-        commitReplacement(trimmed, selectionAfter: textView.selectedRange)
+        commitReplacement(trimmed, selectionAfter: textView.selectedRange, actionName: "Trim Spaces")
         Haptics.impact(.light)
     }
 
@@ -792,7 +804,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let line = ns.substring(with: NSRange(location: lineStart, length: lineEnd - lineStart))
         let inserted = "\n" + line
         let newBody = ns.replacingCharacters(in: NSRange(location: lineEnd, length: 0), with: inserted)
-        commitReplacement(newBody, selectionAfter: NSRange(location: caret + (inserted as NSString).length, length: 0))
+        commitReplacement(newBody, selectionAfter: NSRange(location: caret + (inserted as NSString).length, length: 0), actionName: "Duplicate Line")
         Haptics.impact(.light)
     }
 
@@ -802,7 +814,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let (lineStart, lineEnd) = lineRange(in: ns, at: caret)
         let removeEnd = (lineEnd < ns.length && ns.character(at: lineEnd) == 0x0A) ? lineEnd + 1 : lineEnd
         let newBody = ns.replacingCharacters(in: NSRange(location: lineStart, length: removeEnd - lineStart), with: "")
-        commitReplacement(newBody, selectionAfter: NSRange(location: lineStart, length: 0))
+        commitReplacement(newBody, selectionAfter: NSRange(location: lineStart, length: 0), actionName: "Delete Line")
         Haptics.warning()
     }
 
@@ -811,7 +823,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let ns = (textView.text ?? "") as NSString
         let newBody = ns.replacingCharacters(in: sel, with: value)
         let nextCaret = sel.location + (value as NSString).length
-        commitReplacement(newBody, selectionAfter: NSRange(location: nextCaret, length: 0))
+        commitReplacement(newBody, selectionAfter: NSRange(location: nextCaret, length: 0), actionName: "Insert")
     }
 
     private func lineRange(in ns: NSString, at location: Int) -> (Int, Int) {
@@ -831,7 +843,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let ns = (textView.text ?? "") as NSString
         UIPasteboard.general.string = ns.substring(with: sel)
         let newBody = ns.replacingCharacters(in: sel, with: "")
-        commitReplacement(newBody, selectionAfter: NSRange(location: sel.location, length: 0))
+        commitReplacement(newBody, selectionAfter: NSRange(location: sel.location, length: 0), actionName: "Cut")
         Haptics.impact(.medium)
     }
 
