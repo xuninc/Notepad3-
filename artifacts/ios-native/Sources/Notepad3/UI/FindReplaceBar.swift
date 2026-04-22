@@ -11,6 +11,15 @@ final class FindReplaceBar: UIView {
     var onClose: (() -> Void)?
     var onReplaceOne: ((String) -> Void)?
     var onReplaceAll: ((String) -> Void)?
+    var onOptionsChanged: (() -> Void)?
+
+    /// Search options, toggled via the trailing buttons on the find row.
+    struct Options {
+        var caseSensitive: Bool = false
+        var wholeWord: Bool = false
+        var regex: Bool = false
+    }
+    private(set) var options = Options()
 
     let findField = UITextField()
     let replaceField = UITextField()
@@ -22,9 +31,13 @@ final class FindReplaceBar: UIView {
     private let nextBtn = UIButton(type: .system)
     private let closeBtn = UIButton(type: .system)
     private let toggleReplaceBtn = UIButton(type: .system)
+    private let caseBtn = UIButton(type: .system)
+    private let wordBtn = UIButton(type: .system)
+    private let regexBtn = UIButton(type: .system)
     private let replaceBtn = UIButton(type: .system)
     private let replaceAllBtn = UIButton(type: .system)
 
+    private var palette: Palette = .light
     private(set) var showsReplace: Bool = false
 
     override init(frame: CGRect) {
@@ -59,6 +72,12 @@ final class FindReplaceBar: UIView {
         configureIcon(nextBtn, systemName: "chevron.down", accessibility: "Next match")
         configureIcon(closeBtn, systemName: "xmark", accessibility: "Close find bar")
         configureIcon(toggleReplaceBtn, systemName: "pencil.tip.crop.circle", accessibility: "Toggle replace")
+        configureIcon(caseBtn, systemName: "textformat", accessibility: "Match case")
+        configureIcon(wordBtn, systemName: "textformat.abc.dottedunderline", accessibility: "Whole word")
+        configureIcon(regexBtn, systemName: "curlybraces", accessibility: "Regex")
+        caseBtn.addTarget(self, action: #selector(caseTapped), for: .touchUpInside)
+        wordBtn.addTarget(self, action: #selector(wordTapped), for: .touchUpInside)
+        regexBtn.addTarget(self, action: #selector(regexTapped), for: .touchUpInside)
 
         replaceBtn.setTitle("Replace", for: .normal)
         replaceBtn.accessibilityLabel = "Replace next"
@@ -80,8 +99,8 @@ final class FindReplaceBar: UIView {
         addSubview(replaceRow)
         addSubview(separator)
 
-        // Find row layout: [toggleReplace] [findField] [prev] [next] [close]
-        let findStack = UIStackView(arrangedSubviews: [toggleReplaceBtn, findField, prevBtn, nextBtn, closeBtn])
+        // Find row layout: [toggleReplace] [findField] [Aa] [ab] [.*] [prev] [next] [close]
+        let findStack = UIStackView(arrangedSubviews: [toggleReplaceBtn, findField, caseBtn, wordBtn, regexBtn, prevBtn, nextBtn, closeBtn])
         findStack.translatesAutoresizingMaskIntoConstraints = false
         findStack.axis = .horizontal
         findStack.spacing = 8
@@ -146,12 +165,20 @@ final class FindReplaceBar: UIView {
         replaceRow.alpha = shows ? 1 : 0
     }
 
-    func applyPalette(_ palette: Palette) {
-        backgroundColor = palette.card
-        separator.backgroundColor = palette.border
-        [prevBtn, nextBtn, closeBtn, toggleReplaceBtn].forEach { $0.tintColor = palette.primary }
-        [replaceBtn, replaceAllBtn].forEach { $0.tintColor = palette.primary }
-        [findField, replaceField].forEach { $0.textColor = palette.foreground }
+    func applyPalette(_ p: Palette) {
+        palette = p
+        backgroundColor = p.card
+        separator.backgroundColor = p.border
+        [prevBtn, nextBtn, closeBtn, toggleReplaceBtn].forEach { $0.tintColor = p.primary }
+        [replaceBtn, replaceAllBtn].forEach { $0.tintColor = p.primary }
+        [findField, replaceField].forEach { $0.textColor = p.foreground }
+        refreshOptionTints()
+    }
+
+    private func refreshOptionTints() {
+        caseBtn.tintColor = options.caseSensitive ? palette.primary : palette.mutedForeground
+        wordBtn.tintColor = options.wholeWord ? palette.primary : palette.mutedForeground
+        regexBtn.tintColor = options.regex ? palette.primary : palette.mutedForeground
     }
 
     func focusFind() {
@@ -168,4 +195,20 @@ final class FindReplaceBar: UIView {
     @objc private func toggleReplaceTapped() { setShowsReplace(!showsReplace) }
     @objc private func replaceTapped() { onReplaceOne?(replaceField.text ?? "") }
     @objc private func replaceAllTapped() { onReplaceAll?(replaceField.text ?? "") }
+
+    @objc private func caseTapped() {
+        options.caseSensitive.toggle()
+        refreshOptionTints()
+        onOptionsChanged?()
+    }
+    @objc private func wordTapped() {
+        options.wholeWord.toggle()
+        refreshOptionTints()
+        onOptionsChanged?()
+    }
+    @objc private func regexTapped() {
+        options.regex.toggle()
+        refreshOptionTints()
+        onOptionsChanged?()
+    }
 }

@@ -725,16 +725,42 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         guard !needle.isEmpty else { return }
         let ns = (textView.text ?? "") as NSString
         let caret = textView.selectedRange
-        let options: NSString.CompareOptions = backwards ? [.caseInsensitive, .backwards] : [.caseInsensitive]
-        let searchRange: NSRange = backwards
-            ? NSRange(location: 0, length: max(0, caret.location))
-            : NSRange(location: min(NSMaxRange(caret), ns.length), length: max(0, ns.length - min(NSMaxRange(caret), ns.length)))
 
-        var found = ns.range(of: needle, options: options, range: searchRange)
-        if found.location == NSNotFound { found = ns.range(of: needle, options: options, range: NSRange(location: 0, length: ns.length)) }
-        guard found.location != NSNotFound else { return }
-        textView.selectedRange = found
-        textView.scrollRangeToVisible(found)
+        // Build NSRegularExpression — regex-mode uses the user's text verbatim,
+        // literal-mode escapes then optionally word-bounds, case-insensitive is
+        // an option flag. This unifies find across plain/regex/word-boundary.
+        let opts = findBar.options
+        let pattern: String
+        if opts.regex {
+            pattern = needle
+        } else {
+            let escaped = NSRegularExpression.escapedPattern(for: needle)
+            pattern = opts.wholeWord ? "\\b\(escaped)\\b" : escaped
+        }
+        var reOpts: NSRegularExpression.Options = []
+        if !opts.caseSensitive { reOpts.insert(.caseInsensitive) }
+        guard let re = try? NSRegularExpression(pattern: pattern, options: reOpts) else {
+            Haptics.error()
+            return
+        }
+
+        let full = NSRange(location: 0, length: ns.length)
+        let matches = re.matches(in: ns as String, options: [], range: full)
+        guard !matches.isEmpty else { Haptics.error(); return }
+
+        let found: NSTextCheckingResult?
+        if backwards {
+            found = matches.last(where: { $0.range.location < caret.location })
+                ?? matches.last
+        } else {
+            let start = NSMaxRange(caret)
+            found = matches.first(where: { $0.range.location >= start })
+                ?? matches.first
+        }
+        guard let r = found?.range else { return }
+        textView.selectedRange = r
+        textView.scrollRangeToVisible(r)
+        Haptics.selectionChanged()
     }
 
     private func replaceCurrent(with replacement: String) {
@@ -749,8 +775,28 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private func replaceAll(with replacement: String) {
         let needle = findBar.findField.text ?? ""
         guard !needle.isEmpty else { return }
-        let ns = (textView.text ?? "") as NSString
-        let updated = ns.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive], range: NSRange(location: 0, length: ns.length))
+        let opts = findBar.options
+        let pattern: String
+        if opts.regex {
+            pattern = needle
+        } else {
+            let escaped = NSRegularExpression.escapedPattern(for: needle)
+            pattern = opts.wholeWord ? "\\b\(escaped)\\b" : escaped
+        }
+        var reOpts: NSRegularExpression.Options = []
+        if !opts.caseSensitive { reOpts.insert(.caseInsensitive) }
+        guard let re = try? NSRegularExpression(pattern: pattern, options: reOpts) else { Haptics.error(); return }
+        let body = textView.text ?? ""
+        // $1 etc. work in regex mode; in literal mode the replacement is also
+        // passed through the template escaper so users can't accidentally
+        // trigger backreferences.
+        let template = opts.regex ? replacement : NSRegularExpression.escapedTemplate(for: replacement)
+        let updated = re.stringByReplacingMatches(
+            in: body,
+            options: [],
+            range: NSRange(location: 0, length: (body as NSString).length),
+            withTemplate: template
+        )
         commitReplacement(updated, selectionAfter: NSRange(location: 0, length: 0), actionName: "Replace All")
     }
 
