@@ -30,6 +30,11 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     // Keyboard accessory — always attached to the text input
     private let keyboardAccessory = KeyboardAccessoryView()
 
+    // Markdown preview — shown in-place when previewMode is on for .markdown docs
+    private let markdownPreview = MarkdownPreviewView()
+    private let markdownPreviewScroll = UIScrollView()
+    private var previewMode = false
+
     // Pointer overlay + optional trackpad
     private let pointerOverlay = PointerOverlay()
     private var virtualTrackpad: VirtualTrackpad?
@@ -66,6 +71,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         super.viewDidLoad()
 
         configureTextView()
+        configureMarkdownPreview()
         configureFindBar()
         configureTabStrip()
         configureMobileChrome()
@@ -84,7 +90,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         // Seed the view from the store
         textView.text = store.activeNote.body
         title = store.activeNote.title
+        tabStrip.layout = prefs.tabsLayout == .list ? .list : .tabs
         tabStrip.reload(notes: store.notes, activeId: store.activeId)
+        classicToolbar.setLabelsVisible(prefs.toolbarLabels)
+        classicToolbar.setRows(prefs.toolbarRows == .double ? 2 : 1)
         rehighlight(force: true)
         refreshStatusBar()
 
@@ -112,6 +121,30 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     // MARK: - Subview configuration
+
+    private func configureMarkdownPreview() {
+        markdownPreviewScroll.translatesAutoresizingMaskIntoConstraints = false
+        markdownPreviewScroll.alwaysBounceVertical = true
+        markdownPreviewScroll.isHidden = true
+        view.addSubview(markdownPreviewScroll)
+
+        markdownPreview.translatesAutoresizingMaskIntoConstraints = false
+        markdownPreview.isActive = false
+        markdownPreviewScroll.addSubview(markdownPreview)
+
+        NSLayoutConstraint.activate([
+            markdownPreview.topAnchor.constraint(equalTo: markdownPreviewScroll.contentLayoutGuide.topAnchor),
+            markdownPreview.leadingAnchor.constraint(equalTo: markdownPreviewScroll.contentLayoutGuide.leadingAnchor),
+            markdownPreview.trailingAnchor.constraint(equalTo: markdownPreviewScroll.contentLayoutGuide.trailingAnchor),
+            markdownPreview.bottomAnchor.constraint(equalTo: markdownPreviewScroll.contentLayoutGuide.bottomAnchor),
+            markdownPreview.widthAnchor.constraint(equalTo: markdownPreviewScroll.frameLayoutGuide.widthAnchor),
+
+            markdownPreviewScroll.leadingAnchor.constraint(equalTo: textView.leadingAnchor),
+            markdownPreviewScroll.trailingAnchor.constraint(equalTo: textView.trailingAnchor),
+            markdownPreviewScroll.topAnchor.constraint(equalTo: textView.topAnchor),
+            markdownPreviewScroll.bottomAnchor.constraint(equalTo: textView.bottomAnchor),
+        ])
+    }
 
     private func configureTextView() {
         textView.translatesAutoresizingMaskIntoConstraints = false
@@ -144,24 +177,25 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
     private func configureTabStrip() {
         tabStrip.translatesAutoresizingMaskIntoConstraints = false
-        tabStrip.onSelect = { [weak self] id in self?.store.setActive(id) }
+        tabStrip.onSelect = { [weak self] id in Haptics.selectionChanged(); self?.store.setActive(id) }
         tabStrip.onClose = { [weak self] id in self?.confirmClose(id) }
         tabStrip.onRename = { [weak self] id in self?.promptRename(id) }
-        tabStrip.onDuplicate = { [weak self] id in self?.store.duplicate(id: id) }
-        tabStrip.onCloseOthers = { [weak self] id in self?.store.closeOthers(keep: id) }
+        tabStrip.onDuplicate = { [weak self] id in Haptics.impact(.light); self?.store.duplicate(id: id) }
+        tabStrip.onCloseOthers = { [weak self] id in Haptics.impact(.medium); self?.store.closeOthers(keep: id) }
+        tabStrip.onOpenListModal = { [weak self] in Haptics.selectionChanged(); self?.presentDocsList() }
         view.addSubview(tabStrip)
     }
 
     private func configureMobileChrome() {
         mobileBottomBar.translatesAutoresizingMaskIntoConstraints = false
-        mobileBottomBar.onOpen = { [weak self] in self?.presentOpenMenu() }
-        mobileBottomBar.onFind = { [weak self] in self?.toggleFind() }
-        mobileBottomBar.onCompare = { [weak self] in self?.presentCompare() }
-        mobileBottomBar.onNew = { [weak self] in self?.store.createBlank() }
-        mobileBottomBar.onMore = { [weak self] in self?.presentMobileMore() }
+        mobileBottomBar.onOpen = { [weak self] in Haptics.selectionChanged(); self?.presentOpenMenu() }
+        mobileBottomBar.onFind = { [weak self] in Haptics.selectionChanged(); self?.toggleFind() }
+        mobileBottomBar.onCompare = { [weak self] in Haptics.selectionChanged(); self?.presentCompare() }
+        mobileBottomBar.onNew = { [weak self] in Haptics.impact(.light); self?.store.createBlank() }
+        mobileBottomBar.onMore = { [weak self] in Haptics.selectionChanged(); self?.presentMobileMore() }
         view.addSubview(mobileBottomBar)
 
-        mobileFab.onTap = { [weak self] in self?.store.createBlank() }
+        mobileFab.onTap = { [weak self] in Haptics.impact(.medium); self?.store.createBlank() }
         view.addSubview(mobileFab)
     }
 
@@ -493,6 +527,11 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let languageItem = UIAction(title: "Change language", image: UIImage(systemName: "curlybraces")) { [weak self] _ in self?.presentLanguagePicker() }
         let gotoItem = UIAction(title: "Go to line…", image: UIImage(systemName: "arrow.down.to.line")) { [weak self] _ in self?.presentGotoLine() }
         let trackpadItem = UIAction(title: "Virtual trackpad", image: UIImage(systemName: "rectangle.and.hand.point.up.left")) { [weak self] _ in self?.toggleTrackpad() }
+        let previewItem = UIAction(
+            title: previewMode ? "Edit markdown" : "Preview markdown",
+            image: UIImage(systemName: previewMode ? "pencil" : "eye.fill"),
+            attributes: store.activeNote.language == .markdown ? [] : .disabled
+        ) { [weak self] _ in self?.togglePreviewMode() }
         let readItem = UIAction(title: readMode ? "Exit read mode" : "Read mode", image: UIImage(systemName: readMode ? "eye.slash" : "eye")) { [weak self] _ in self?.readMode.toggle() }
         let zenItem = UIAction(title: zenMode ? "Exit zen" : "Zen mode", image: UIImage(systemName: "rectangle.compress.vertical")) { [weak self] _ in self?.setZenMode(!(self?.zenMode ?? false)) }
 
@@ -518,7 +557,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         }
 
         return UIMenu(title: "", children: [
-            prefsItem, compareItem, languageItem, gotoItem, trackpadItem,
+            prefsItem, compareItem, languageItem, gotoItem, trackpadItem, previewItem,
             readItem, zenItem,
             lineGroup, insertDate,
             duplicateDoc, renameDoc, closeDoc,
@@ -539,6 +578,8 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         separator.backgroundColor = palette.border
         tabStrip.applyPalette(palette)
         findBar.applyPalette(palette)
+        markdownPreview.applyPalette(palette)
+        markdownPreviewScroll.backgroundColor = palette.editorBackground
         mobileBottomBar.applyPalette(palette)
         mobileFab.applyPalette(palette)
         aeroMenuBar.applyPalette(palette)
@@ -567,6 +608,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private func onPreferencesChanged() {
         // Layout mode may have flipped — reapply.
         applyLayoutMode(animated: true)
+        // Tab strip layout (tabs vs list)
+        tabStrip.layout = prefs.tabsLayout == .list ? .list : .tabs
+        tabStrip.reload(notes: store.notes, activeId: store.activeId)
         // Toolbar prefs
         classicToolbar.setLabelsVisible(prefs.toolbarLabels)
         classicToolbar.setRows(prefs.toolbarRows == .double ? 2 : 1)
@@ -642,6 +686,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         store.updateActive(body: textView.text)
         rehighlight()
+        if previewMode { markdownPreview.setMarkdown(textView.text ?? "") }
         keyboardAccessory.canUndo = textView.undoManager?.canUndo ?? false
         keyboardAccessory.canRedo = textView.undoManager?.canRedo ?? false
         refreshStatusBar()
@@ -728,6 +773,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
             .joined(separator: "\n")
         commitReplacement(sorted, selectionAfter: NSRange(location: 0, length: 0))
+        Haptics.impact(.medium)
     }
 
     private func trimTrailingSpaces() {
@@ -736,6 +782,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             .map { $0.replacingOccurrences(of: #"[ \t]+$"#, with: "", options: .regularExpression) }
             .joined(separator: "\n")
         commitReplacement(trimmed, selectionAfter: textView.selectedRange)
+        Haptics.impact(.light)
     }
 
     private func duplicateCurrentLine() {
@@ -746,6 +793,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let inserted = "\n" + line
         let newBody = ns.replacingCharacters(in: NSRange(location: lineEnd, length: 0), with: inserted)
         commitReplacement(newBody, selectionAfter: NSRange(location: caret + (inserted as NSString).length, length: 0))
+        Haptics.impact(.light)
     }
 
     private func deleteCurrentLine() {
@@ -755,6 +803,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let removeEnd = (lineEnd < ns.length && ns.character(at: lineEnd) == 0x0A) ? lineEnd + 1 : lineEnd
         let newBody = ns.replacingCharacters(in: NSRange(location: lineStart, length: removeEnd - lineStart), with: "")
         commitReplacement(newBody, selectionAfter: NSRange(location: lineStart, length: 0))
+        Haptics.warning()
     }
 
     private func insertText(_ value: String) {
@@ -783,6 +832,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         UIPasteboard.general.string = ns.substring(with: sel)
         let newBody = ns.replacingCharacters(in: sel, with: "")
         commitReplacement(newBody, selectionAfter: NSRange(location: sel.location, length: 0))
+        Haptics.impact(.medium)
     }
 
     private func copySelection() {
@@ -790,11 +840,13 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         guard sel.length > 0 else { return }
         let ns = (textView.text ?? "") as NSString
         UIPasteboard.general.string = ns.substring(with: sel)
+        Haptics.selectionChanged()
     }
 
     private func pasteFromClipboard() {
         guard let value = UIPasteboard.general.string, !value.isEmpty else { return }
         insertText(value)
+        Haptics.impact(.light)
     }
 
     private func selectWord() {
@@ -845,6 +897,19 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     // MARK: - Zen / trackpad / modals
+
+    private func togglePreviewMode() {
+        guard store.activeNote.language == .markdown else { return }
+        previewMode.toggle()
+        markdownPreview.isActive = previewMode
+        markdownPreviewScroll.isHidden = !previewMode
+        textView.isHidden = previewMode
+        if previewMode {
+            markdownPreview.setMarkdown(textView.text ?? "")
+            textView.resignFirstResponder()
+        }
+        Haptics.selectionChanged()
+    }
 
     private func setZenMode(_ on: Bool) {
         zenMode = on
@@ -1007,6 +1072,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
                 SheetRow(icon: "rectangle.compress.vertical", title: "Zen mode", checked: zenMode) { [weak self] in self?.setZenMode(!(self?.zenMode ?? false)) },
                 SheetRow(icon: "rectangle.split.1x2", title: "Compare documents") { [weak self] in self?.presentCompare() },
                 SheetRow(icon: "rectangle.and.hand.point.up.left", title: "Virtual trackpad", checked: virtualTrackpad != nil) { [weak self] in self?.toggleTrackpad() },
+                SheetRow(icon: previewMode ? "pencil" : "eye.fill", title: previewMode ? "Edit markdown" : "Preview markdown", checked: previewMode) { [weak self] in self?.togglePreviewMode() },
                 SheetRow(icon: "macwindow", title: "Switch to classic layout") { [weak self] in self?.prefs.layoutMode = .classic },
             ]),
             SheetSection(title: "Tools", rows: [
@@ -1084,7 +1150,9 @@ extension EditorViewController: UIDocumentPickerDelegate {
                 ?? ""
             let language = NoteLanguage.detect(fromFileName: url.lastPathComponent)
             store.importNote(title: url.lastPathComponent, body: text, language: language)
+            Haptics.success()
         } catch {
+            Haptics.error()
             let alert = UIAlertController(title: "Couldn't open file", message: error.localizedDescription, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             present(alert, animated: true)
