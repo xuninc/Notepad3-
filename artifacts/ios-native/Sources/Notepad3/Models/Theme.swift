@@ -207,8 +207,41 @@ extension Palette {
         case .modern:    return .modern
         case .sunset:    return .sunset
         case .cyberpunk: return .cyberpunk
-        case .custom:    return .light // custom palette builder not yet wired
+        case .custom:    return .light // overrides applied by ThemeController.palette
         }
+    }
+
+    /// Build a palette from a base + hex overrides. Keys that aren't valid
+    /// field names or that fail to parse are silently ignored (the base value
+    /// sticks). This is how the Custom Palette builder's dict becomes a
+    /// live `Palette`.
+    static func byOverlaying(overrides: [String: String], onto base: Palette) -> Palette {
+        var out = base
+        func color(for hex: String?) -> UIColor? {
+            guard let hex, !hex.isEmpty else { return nil }
+            var v = hex
+            if v.hasPrefix("#") { v.removeFirst() }
+            guard v.count == 6, let n = UInt32(v, radix: 16) else { return nil }
+            return UIColor(
+                red: CGFloat((n >> 16) & 0xFF) / 255,
+                green: CGFloat((n >> 8) & 0xFF) / 255,
+                blue: CGFloat(n & 0xFF) / 255,
+                alpha: 1
+            )
+        }
+        if let c = color(for: overrides["background"]) { out.background = c }
+        if let c = color(for: overrides["foreground"]) { out.foreground = c }
+        if let c = color(for: overrides["card"]) { out.card = c }
+        if let c = color(for: overrides["primary"]) { out.primary = c }
+        if let c = color(for: overrides["primaryForeground"]) { out.primaryForeground = c }
+        if let c = color(for: overrides["secondary"]) { out.secondary = c }
+        if let c = color(for: overrides["muted"]) { out.muted = c }
+        if let c = color(for: overrides["mutedForeground"]) { out.mutedForeground = c }
+        if let c = color(for: overrides["accent"]) { out.accent = c }
+        if let c = color(for: overrides["border"]) { out.border = c }
+        if let c = color(for: overrides["editorBackground"]) { out.editorBackground = c }
+        if let c = color(for: overrides["editorGutter"]) { out.editorGutter = c }
+        return out
     }
 }
 

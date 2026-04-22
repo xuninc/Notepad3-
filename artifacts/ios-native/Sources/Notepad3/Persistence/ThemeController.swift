@@ -29,7 +29,15 @@ final class ThemeController {
         }
     }
 
-    var palette: Palette { Palette.palette(for: resolvedTheme) }
+    /// Resolved concrete palette. For a named theme, returns its preset.
+    /// For `.custom`, starts from `.light` and overlays any hex overrides
+    /// stored in `Preferences.customPalette` so partial customizations are
+    /// legal (user only tweaks 2–3 fields, rest stay sane).
+    var palette: Palette {
+        let name = resolvedTheme
+        guard name == .custom else { return Palette.palette(for: name) }
+        return Palette.byOverlaying(overrides: Preferences.shared.customPalette, onto: .light)
+    }
 
     /// Called by the top-level view controller whenever its trait collection
     /// changes, so "match system" can pick up light↔dark swaps.
