@@ -23,7 +23,7 @@ Before doing anything, get oriented from primary sources:
 6. `artifacts/mobile/app/index.tsx` — the RN app that the Swift port is mirroring (1847 LOC; this is the *spec*)
 7. `artifacts/ios-native/Project.yml` — xcodegen manifest
 
-Then `cd artifacts/ios-native && xcodegen generate && open Notepad3.xcodeproj` and try to build. The result of that first build is your starting line.
+The recipient already has a clean local build of `feat/ios-native-port` as of 2026-04-22 — compilation is not in question. Your starting line is reading the code, not bringing up the build.
 
 ---
 
@@ -150,7 +150,7 @@ artifacts/ios-native/Sources/Notepad3/
 - **App.swift is 27 LOC.** Hardwires `EditorViewController` as root with a basic UINavigationController. No Preferences boot read, no crash flag check.
 - **Outdated README.** `artifacts/ios-native/README.md` describes a layout that no longer matches reality (mentions `Editor/EditorTextView.swift`, `Tabs/`, `Sheets/` — none exist).
 - **No tests.** Zero unit or UI tests in the Swift target.
-- **No Asset catalog.** `Project.yml` references `LaunchBackground` and `AccentColor` color names but the asset catalog itself doesn't appear to exist. May fail xcodebuild — TBD on first CI run.
+- **No Asset catalog visible in the source tree.** `Project.yml` references `LaunchBackground` and `AccentColor` color names. Either the asset catalog exists outside the source tree, or Xcode is tolerating the missing references with warnings. Worth confirming before CI.
 
 ---
 
@@ -178,11 +178,9 @@ These come from Corey's MEMORY.md and prior session feedback. Following them avo
 
 ---
 
-## 6. The two important early tasks
+## 6. First priority
 
-**A. Run a clean build on your Mac and report what you find.** The previous agents wrote 7,855 LOC across 30 files but no one has confirmed it all compiles together end-to-end since the most recent commits. Before adding new features, run `xcodegen generate && xcodebuild build`. Whatever fails (missing assets, missing imports, scheme name issues), fix. This is your first PR.
-
-**B. Add a Swift xcodebuild CI workflow.** Even with you building locally, the team needs reproducibility. Until CI is green, every "I added X" claim is faith for anyone who isn't you.
+**Add a Swift xcodebuild CI workflow.** Build is clean on your Mac, but it's not reproducible from a clean checkout in CI. Until CI is green, every "I added X" claim is unverifiable for anyone who isn't you, and a future contributor with a slightly different Xcode version may be unable to build at all.
 
 ### Spec for the workflow
 
