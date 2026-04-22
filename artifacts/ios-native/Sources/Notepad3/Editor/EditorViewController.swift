@@ -400,6 +400,12 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             mobileBottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             mobileBottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             mobileBottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // Explicit height. MobileBottomBar has no intrinsic content size
+            // and its internal stack anchors to its own safeAreaLayoutGuide,
+            // which doesn't constrain the outer frame — the solver was free to
+            // let the bar fill all remaining space and collapse the text view
+            // to zero height. 54pt of chrome + the 34pt home-indicator inset.
+            mobileBottomBar.heightAnchor.constraint(equalToConstant: 88),
 
             mobileFab.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             mobileFab.bottomAnchor.constraint(equalTo: mobileBottomBar.topAnchor, constant: -12),
