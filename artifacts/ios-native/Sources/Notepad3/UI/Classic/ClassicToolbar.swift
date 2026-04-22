@@ -26,6 +26,26 @@ final class ClassicToolbar: UIView {
     var onCompare: (() -> Void)?
     var onMore: (() -> Void)?
 
+    // Additional callbacks mirroring the RN classic toolbar's full icon set.
+    var onSelectAll: (() -> Void)?
+    var onSelectLine: (() -> Void)?
+    var onSelectParagraph: (() -> Void)?
+    var onInsertDateTime: (() -> Void)?
+    var onDuplicateLine: (() -> Void)?
+    var onDeleteLine: (() -> Void)?
+    var onGotoLine: (() -> Void)?
+    var onToggleReadMode: (() -> Void)?
+    var onToggleZenMode: (() -> Void)?
+    var onToggleTrackpad: (() -> Void)?
+    var onPreferences: (() -> Void)?
+    var onDeleteDoc: (() -> Void)?
+
+    // Toggle-state providers. Return true if the underlying mode is active;
+    // the toolbar re-tints the matching button on `refresh()`.
+    var isReadMode: (() -> Bool)?
+    var isZenMode: (() -> Bool)?
+    var isTrackpadOn: (() -> Bool)?
+
     private let gradient = CAGradientLayer()
     private let separator = UIView()
     private let container = UIView()
@@ -35,6 +55,10 @@ final class ClassicToolbar: UIView {
     private let bottomStack = UIStackView()
     private let rowSeparator = UIView()
     private var heightConstraint: NSLayoutConstraint?
+
+    // Map of button id -> the button view in the current layout, so `refresh()`
+    // can re-tint toggleable buttons without a full rebuild.
+    private var buttonsById: [String: ClassicToolbarButton] = [:]
 
     private var palette: Palette = .classic
     private var labelsVisible: Bool = false
@@ -154,38 +178,85 @@ final class ClassicToolbar: UIView {
         rebuild()
     }
 
+    /// Re-evaluates toggleable-button state and updates tints / icons accordingly.
+    /// Callers invoke this after mutating state the toolbar displays (e.g. after
+    /// toggling read mode externally). Cheaper than a full rebuild.
+    func refresh() {
+        applyToggleState()
+    }
+
     // MARK: - Layout
 
     private func items() -> [ClassicToolbarKind] {
-        // Mirrors the RN ordering. Feather icon names mapped to SF Symbols.
-        [
-            .button(ClassicToolbarItemSpec(id: "tb-new",   symbol: "doc.badge.plus",                  label: "New")     { [weak self] in self?.onNew?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-open",  symbol: "folder",                          label: "Open")    { [weak self] in self?.onOpen?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-save",  symbol: "square.and.arrow.down",           label: "Save")    { [weak self] in self?.onSave?() }),
+        // Mirrors the RN ordering (`/artifacts/mobile/app/index.tsx`, the classic
+        // toolbar `items` array). Feather icon names mapped to SF Symbols. The
+        // existing 15 callbacks (New/Open/Save/Cut/Copy/Paste/Undo/Redo/Find/
+        // Replace/Trim/Sort/Docs/Compare/More) are preserved and interleaved
+        // into the same RN groups so host wiring still works.
+        let readActive = isReadMode?() ?? false
+        let readSymbol = readActive ? "eye" : "eye.slash"
+        return [
+            // File group
+            .button(ClassicToolbarItemSpec(id: "tb-new",     symbol: "doc.badge.plus",                  label: "New")              { [weak self] in self?.onNew?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-open",    symbol: "folder",                          label: "Open")             { [weak self] in self?.onOpen?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-save",    symbol: "square.and.arrow.down",           label: "Save")             { [weak self] in self?.onSave?() }),
             .separator,
-            .button(ClassicToolbarItemSpec(id: "tb-cut",   symbol: "scissors",                        label: "Cut")     { [weak self] in self?.onCut?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-copy",  symbol: "doc.on.clipboard",                label: "Copy")    { [weak self] in self?.onCopy?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-paste", symbol: "square.and.arrow.down.on.square", label: "Paste")   { [weak self] in self?.onPaste?() }),
+
+            // Clipboard group
+            .button(ClassicToolbarItemSpec(id: "tb-cut",     symbol: "scissors",                        label: "Cut")              { [weak self] in self?.onCut?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-copy",    symbol: "doc.on.clipboard",                label: "Copy")             { [weak self] in self?.onCopy?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-paste",   symbol: "square.and.arrow.down.on.square", label: "Paste")            { [weak self] in self?.onPaste?() }),
             .separator,
-            .button(ClassicToolbarItemSpec(id: "tb-undo",  symbol: "arrow.uturn.backward",            label: "Undo")    { [weak self] in self?.onUndo?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-redo",  symbol: "arrow.uturn.forward",             label: "Redo")    { [weak self] in self?.onRedo?() }),
+
+            // Selection group (RN: Select all / Select line / Select paragraph)
+            .button(ClassicToolbarItemSpec(id: "tb-selall",  symbol: "character.textbox",               label: "Select all")       { [weak self] in self?.onSelectAll?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-selline", symbol: "text.line.first.and.arrowtriangle.forward", label: "Select line") { [weak self] in self?.onSelectLine?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-selpar",  symbol: "paragraphsign",                   label: "Select paragraph") { [weak self] in self?.onSelectParagraph?() }),
             .separator,
-            .button(ClassicToolbarItemSpec(id: "tb-find",  symbol: "magnifyingglass",                 label: "Find")    { [weak self] in self?.onFind?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-rep",   symbol: "arrow.triangle.2.circlepath",     label: "Replace") { [weak self] in self?.onReplace?() }),
+
+            // Edit-history group
+            .button(ClassicToolbarItemSpec(id: "tb-undo",    symbol: "arrow.uturn.backward",            label: "Undo")             { [weak self] in self?.onUndo?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-redo",    symbol: "arrow.uturn.forward",             label: "Redo")             { [weak self] in self?.onRedo?() }),
             .separator,
-            .button(ClassicToolbarItemSpec(id: "tb-trim",  symbol: "text.alignleft",                  label: "Trim")    { [weak self] in self?.onTrim?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-sort",  symbol: "arrow.up.arrow.down",             label: "Sort")    { [weak self] in self?.onSort?() }),
+
+            // Find / Replace / Insert date-time
+            .button(ClassicToolbarItemSpec(id: "tb-find",    symbol: "magnifyingglass",                 label: "Find")             { [weak self] in self?.onFind?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-rep",     symbol: "arrow.triangle.2.circlepath",     label: "Replace")          { [weak self] in self?.onReplace?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-stamp",   symbol: "clock",                           label: "Insert date")      { [weak self] in self?.onInsertDateTime?() }),
             .separator,
-            .button(ClassicToolbarItemSpec(id: "tb-docs",  symbol: "list.bullet",                     label: "Docs")    { [weak self] in self?.onDocs?() }),
-            .button(ClassicToolbarItemSpec(id: "tb-cmp",   symbol: "rectangle.split.2x1",             label: "Compare") { [weak self] in self?.onCompare?() }),
+
+            // Line-level edits
+            .button(ClassicToolbarItemSpec(id: "tb-dupl",    symbol: "plus.square.on.square",           label: "Duplicate line")   { [weak self] in self?.onDuplicateLine?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-cutl",    symbol: "minus.square",                    label: "Delete line",
+                                           destructive: true)                                                                      { [weak self] in self?.onDeleteLine?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-goto",    symbol: "arrow.down.to.line",              label: "Goto line")        { [weak self] in self?.onGotoLine?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-trim",    symbol: "text.alignleft",                  label: "Trim")             { [weak self] in self?.onTrim?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-sort",    symbol: "arrow.up.arrow.down",             label: "Sort")             { [weak self] in self?.onSort?() }),
             .separator,
-            .button(ClassicToolbarItemSpec(id: "tb-more",  symbol: "ellipsis",                        label: "More")    { [weak self] in self?.onMore?() }),
+
+            // View / toggles
+            .button(ClassicToolbarItemSpec(id: "tb-docs",    symbol: "list.bullet",                     label: "Docs")             { [weak self] in self?.onDocs?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-cmp",     symbol: "rectangle.split.2x1",             label: "Compare")          { [weak self] in self?.onCompare?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-read",    symbol: readSymbol,                        label: "Read mode")        { [weak self] in self?.onToggleReadMode?(); self?.refresh() }),
+            .button(ClassicToolbarItemSpec(id: "tb-zen",     symbol: "rectangle.compress.vertical",     label: "Zen mode")         { [weak self] in self?.onToggleZenMode?(); self?.refresh() }),
+            .button(ClassicToolbarItemSpec(id: "tb-mouse",   symbol: "rectangle.and.hand.point.up.left", label: "Trackpad")        { [weak self] in self?.onToggleTrackpad?(); self?.refresh() }),
+            .separator,
+
+            // Settings / overflow
+            .button(ClassicToolbarItemSpec(id: "tb-prefs",   symbol: "gear",                            label: "Preferences")      { [weak self] in self?.onPreferences?() }),
+            .button(ClassicToolbarItemSpec(id: "tb-more",    symbol: "ellipsis",                        label: "More")             { [weak self] in self?.onMore?() }),
+            .separator,
+
+            // Destructive
+            .button(ClassicToolbarItemSpec(id: "tb-del",     symbol: "trash",                           label: "Delete doc",
+                                           destructive: true)                                                                      { [weak self] in self?.onDeleteDoc?() }),
         ]
     }
 
     private func rebuild() {
         topStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         bottomStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        buttonsById.removeAll(keepingCapacity: true)
 
         let all = items()
         let useTwoRows = rows == 2
@@ -206,6 +277,8 @@ final class ClassicToolbar: UIView {
         } else {
             fill(stack: topStack, with: all)
         }
+
+        applyToggleState()
     }
 
     private func fill(stack: UIStackView, with items: [ClassicToolbarKind]) {
@@ -227,8 +300,28 @@ final class ClassicToolbar: UIView {
                 ])
                 stack.addArrangedSubview(wrapper)
             case .button(let spec):
-                stack.addArrangedSubview(ClassicToolbarButton(spec: spec, palette: palette, showLabel: labelsVisible))
+                let button = ClassicToolbarButton(spec: spec, palette: palette, showLabel: labelsVisible)
+                buttonsById[spec.id] = button
+                stack.addArrangedSubview(button)
             }
+        }
+    }
+
+    /// Re-tints toggleable buttons based on the current state providers.
+    /// `tb-read` also swaps its icon between `eye` and `eye.slash`.
+    private func applyToggleState() {
+        if let readBtn = buttonsById["tb-read"] {
+            let active = isReadMode?() ?? false
+            readBtn.setActive(active, tint: palette.primary, inactiveTint: palette.foreground)
+            readBtn.setSymbol(active ? "eye" : "eye.slash")
+        }
+        if let zenBtn = buttonsById["tb-zen"] {
+            let active = isZenMode?() ?? false
+            zenBtn.setActive(active, tint: palette.primary, inactiveTint: palette.foreground)
+        }
+        if let trackBtn = buttonsById["tb-mouse"] {
+            let active = isTrackpadOn?() ?? false
+            trackBtn.setActive(active, tint: palette.primary, inactiveTint: palette.foreground)
         }
     }
 }
@@ -239,7 +332,16 @@ fileprivate struct ClassicToolbarItemSpec {
     let id: String
     let symbol: String
     let label: String
+    let destructive: Bool
     let action: () -> Void
+
+    init(id: String, symbol: String, label: String, destructive: Bool = false, action: @escaping () -> Void) {
+        self.id = id
+        self.symbol = symbol
+        self.label = label
+        self.destructive = destructive
+        self.action = action
+    }
 }
 
 fileprivate enum ClassicToolbarKind {
@@ -252,10 +354,12 @@ private final class ClassicToolbarButton: UIControl {
     private let label = UILabel()
     private let action: () -> Void
     private let specLabel: String
+    private let baseTint: UIColor
 
     init(spec: ClassicToolbarItemSpec, palette: Palette, showLabel: Bool) {
         self.action = spec.action
         self.specLabel = spec.label
+        self.baseTint = spec.destructive ? palette.destructive : palette.foreground
         super.init(frame: .zero)
 
         translatesAutoresizingMaskIntoConstraints = false
@@ -267,7 +371,7 @@ private final class ClassicToolbarButton: UIControl {
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.contentMode = .scaleAspectFit
         iconView.image = UIImage(systemName: spec.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .regular))
-        iconView.tintColor = palette.foreground
+        iconView.tintColor = baseTint
         iconView.isUserInteractionEnabled = false
         addSubview(iconView)
 
@@ -275,7 +379,7 @@ private final class ClassicToolbarButton: UIControl {
         label.text = spec.label
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 10, weight: .regular)
-        label.textColor = palette.foreground
+        label.textColor = baseTint
         label.isHidden = !showLabel
         label.isUserInteractionEnabled = false
         addSubview(label)
@@ -322,5 +426,21 @@ private final class ClassicToolbarButton: UIControl {
     @objc private func longPressFired(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
         UIAccessibility.post(notification: .announcement, argument: specLabel)
+    }
+
+    /// Flips tint between the palette's primary (active) and the button's base
+    /// tint (inactive) — used by `ClassicToolbar.applyToggleState()`.
+    /// `inactiveTint` is accepted for API symmetry but `baseTint` (set at init
+    /// from the spec's destructive flag) always wins for the inactive color so
+    /// a destructive button stays destructive-colored when untoggled.
+    func setActive(_ active: Bool, tint: UIColor, inactiveTint: UIColor) {
+        _ = inactiveTint
+        let color = active ? tint : baseTint
+        iconView.tintColor = color
+        label.textColor = color
+    }
+
+    func setSymbol(_ name: String) {
+        iconView.image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .regular))
     }
 }

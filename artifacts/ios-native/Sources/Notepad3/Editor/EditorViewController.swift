@@ -21,6 +21,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private let mobileFab = MobileFAB()
 
     // Classic-only chrome
+    private let classicTitleBar = ClassicTitleBar()
     private let aeroMenuBar = AeroMenuBar()
     private let classicToolbar = ClassicToolbar()
     private let statusBar = StatusBar()
@@ -153,7 +154,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
     private func configureMobileChrome() {
         mobileBottomBar.translatesAutoresizingMaskIntoConstraints = false
-        mobileBottomBar.onOpen = { [weak self] in self?.presentFileOpen() }
+        mobileBottomBar.onOpen = { [weak self] in self?.presentOpenMenu() }
         mobileBottomBar.onFind = { [weak self] in self?.toggleFind() }
         mobileBottomBar.onCompare = { [weak self] in self?.presentCompare() }
         mobileBottomBar.onNew = { [weak self] in self?.store.createBlank() }
@@ -165,6 +166,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func configureClassicChrome() {
+        classicTitleBar.translatesAutoresizingMaskIntoConstraints = false
+        classicTitleBar.setTitle(store.activeNote.title)
+        view.addSubview(classicTitleBar)
+
         aeroMenuBar.translatesAutoresizingMaskIntoConstraints = false
         wireAeroMenuBar()
         view.addSubview(aeroMenuBar)
@@ -246,6 +251,51 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         classicToolbar.onDocs = { [weak self] in self?.presentDocsList() }
         classicToolbar.onCompare = { [weak self] in self?.presentCompare() }
         classicToolbar.onMore = { [weak self] in self?.presentMobileMore() }
+
+        // New (expanded) buttons
+        classicToolbar.onSelectAll = { [weak self] in self?.selectAll(nil) }
+        classicToolbar.onSelectLine = { [weak self] in self?.selectLine() }
+        classicToolbar.onSelectParagraph = { [weak self] in self?.selectParagraph() }
+        classicToolbar.onInsertDateTime = { [weak self] in
+            self?.insertText(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))
+        }
+        classicToolbar.onDuplicateLine = { [weak self] in self?.duplicateCurrentLine() }
+        classicToolbar.onDeleteLine = { [weak self] in self?.deleteCurrentLine() }
+        classicToolbar.onGotoLine = { [weak self] in self?.presentGotoLine() }
+        classicToolbar.onToggleReadMode = { [weak self] in self?.readMode.toggle(); self?.classicToolbar.refresh() }
+        classicToolbar.onToggleZenMode = { [weak self] in self?.setZenMode(!(self?.zenMode ?? false)); self?.classicToolbar.refresh() }
+        classicToolbar.onToggleTrackpad = { [weak self] in self?.toggleTrackpad(); self?.classicToolbar.refresh() }
+        classicToolbar.onPreferences = { [weak self] in self?.presentSettings() }
+        classicToolbar.onDeleteDoc = { [weak self] in
+            guard let self else { return }; self.confirmClose(self.store.activeId)
+        }
+
+        // Live check-state for toggleable icons
+        classicToolbar.isReadMode = { [weak self] in self?.readMode ?? false }
+        classicToolbar.isZenMode = { [weak self] in self?.zenMode ?? false }
+        classicToolbar.isTrackpadOn = { [weak self] in self?.virtualTrackpad != nil }
+    }
+
+    /// Select the paragraph (blank-line-delimited block) around the caret.
+    private func selectParagraph() {
+        let ns = (textView.text ?? "") as NSString
+        let at = min(textView.selectedRange.location, ns.length)
+        var start = at
+        // Walk backwards until we hit a blank line or start of text.
+        while start > 0 {
+            let (ls, le) = lineRange(in: ns, at: start - 1)
+            if ls == le { break } // empty line
+            start = ls
+            if ls == 0 { break }
+        }
+        var end = at
+        while end < ns.length {
+            let (ls, le) = lineRange(in: ns, at: end)
+            if ls == le { break }
+            end = le + (le < ns.length ? 1 : 0)
+            if end >= ns.length { end = ns.length; break }
+        }
+        if end > start { textView.selectedRange = NSRange(location: start, length: end - start) }
     }
 
     private func configureKeyboardAccessory() {
@@ -321,10 +371,15 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             mobileFab.bottomAnchor.constraint(equalTo: mobileBottomBar.topAnchor, constant: -12),
         ]
 
-        // Classic mode: [findBar] [aeroMenu] [classicToolbar] [tabStrip] [separator]
-        //               [lineGutter + textView] [statusBar@bottom]
+        // Classic mode: [findBar] [titleBar] [aeroMenu] [classicToolbar] [tabStrip]
+        //               [separator] [lineGutter + textView] [statusBar@bottom]
         classicConstraints = [
-            aeroMenuBar.topAnchor.constraint(equalTo: findBar.bottomAnchor),
+            classicTitleBar.topAnchor.constraint(equalTo: findBar.bottomAnchor),
+            classicTitleBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            classicTitleBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            classicTitleBar.heightAnchor.constraint(equalToConstant: 22),
+
+            aeroMenuBar.topAnchor.constraint(equalTo: classicTitleBar.bottomAnchor),
             aeroMenuBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             aeroMenuBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             aeroMenuBar.heightAnchor.constraint(equalToConstant: 28),
@@ -368,6 +423,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         // Common hidden defaults; the active mode re-shows its own chrome.
         mobileBottomBar.isHidden = true
         mobileFab.isHidden = true
+        classicTitleBar.isHidden = true
         aeroMenuBar.isHidden = true
         classicToolbar.isHidden = true
         statusBar.isHidden = true
@@ -380,12 +436,13 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             NSLayoutConstraint.activate(mobileConstraints)
             navigationController?.setNavigationBarHidden(false, animated: animated)
         case .classic:
+            classicTitleBar.isHidden = false
             aeroMenuBar.isHidden = false
             classicToolbar.isHidden = !toolbarOpen
             statusBar.isHidden = false
             lineGutter.isHidden = false
             NSLayoutConstraint.activate(classicConstraints)
-            // Classic mode hides the iOS nav bar — AeroMenuBar takes its place.
+            // Classic mode hides the iOS nav bar — ClassicTitleBar + AeroMenuBar take its place.
             navigationController?.setNavigationBarHidden(true, animated: animated)
         }
 
@@ -486,6 +543,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         mobileFab.applyPalette(palette)
         aeroMenuBar.applyPalette(palette)
         classicToolbar.applyPalette(palette)
+        classicTitleBar.applyPalette(palette)
         statusBar.applyPalette(palette)
         lineGutter.applyPalette(palette)
         keyboardAccessory.applyPalette(palette)
@@ -530,6 +588,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             textView.selectedRange = NSRange(location: min(old.location, len), length: 0)
         }
         title = note.title
+        classicTitleBar.setTitle(note.title)
         tabStrip.reload(notes: store.notes, activeId: store.activeId)
         rehighlight(force: true)
         refreshStatusBar()
@@ -547,6 +606,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             cursorColumn: col,
             lineCount: lines,
             charCount: ns.length,
+            selectionLength: textView.selectedRange.length,
+            lineEndings: StatusBar.detectLineEndings(in: body),
+            savedAt: store.activeNote.updatedAt,
             language: store.activeNote.language,
             theme: themes.resolvedTheme
         )
@@ -889,8 +951,39 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         present(alert, animated: true)
     }
 
+    /// Small quick-file menu shown when the mobile bottom bar's "Open" is
+    /// tapped. One tap away from New blank OR Open-from-Files, plus the
+    /// list of already-open docs.
+    private func presentOpenMenu() {
+        let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "New blank", style: .default) { [weak self] _ in self?.store.createBlank() })
+        alert.addAction(UIAlertAction(title: "Open from Files…", style: .default) { [weak self] _ in self?.presentFileOpen() })
+        if store.notes.count > 1 {
+            for note in store.notes where note.id != store.activeId {
+                alert.addAction(UIAlertAction(title: note.title, style: .default) { [weak self] _ in
+                    self?.store.setActive(note.id)
+                })
+            }
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+
     private func presentMobileMore() {
         let sections: [SheetSection] = [
+            SheetSection(title: "File", rows: [
+                SheetRow(icon: "doc", title: "New blank") { [weak self] in self?.store.createBlank() },
+                SheetRow(icon: "folder", title: "Open from Files…") { [weak self] in self?.presentFileOpen() },
+                SheetRow(icon: "plus.square.on.square", title: "Duplicate current") { [weak self] in
+                    guard let self else { return }; self.store.duplicate(id: self.store.activeId)
+                },
+                SheetRow(icon: "pencil", title: "Rename current") { [weak self] in
+                    guard let self else { return }; self.promptRename(self.store.activeId)
+                },
+                SheetRow(icon: "xmark", title: "Close current", destructive: true) { [weak self] in
+                    guard let self else { return }; self.confirmClose(self.store.activeId)
+                },
+            ]),
             SheetSection(title: "Edit", rows: [
                 SheetRow(icon: "arrow.uturn.backward", title: "Undo") { [weak self] in self?.textView.undoManager?.undo() },
                 SheetRow(icon: "arrow.uturn.forward", title: "Redo") { [weak self] in self?.textView.undoManager?.redo() },
@@ -920,17 +1013,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
                 SheetRow(icon: "gear", title: "Preferences…") { [weak self] in self?.presentSettings() },
                 SheetRow(icon: "curlybraces", title: "Change language") { [weak self] in self?.presentLanguagePicker() },
                 SheetRow(icon: "paintpalette", title: "Theme — quick toggle") { [weak self] in self?.themes.quickToggleDarkLight() },
-            ]),
-            SheetSection(title: "Document", rows: [
-                SheetRow(icon: "plus.square.on.square", title: "Duplicate current doc") { [weak self] in
-                    guard let self else { return }; self.store.duplicate(id: self.store.activeId)
-                },
-                SheetRow(icon: "pencil", title: "Rename current doc") { [weak self] in
-                    guard let self else { return }; self.promptRename(self.store.activeId)
-                },
-                SheetRow(icon: "xmark", title: "Close current doc", destructive: true) { [weak self] in
-                    guard let self else { return }; self.confirmClose(self.store.activeId)
-                },
             ]),
             SheetSection(title: "Help", rows: [
                 SheetRow(icon: "info.circle", title: "About") { [weak self] in self?.presentAbout() },
