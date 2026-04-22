@@ -143,14 +143,18 @@ artifacts/ios-native/Sources/Notepad3/
 - **Trackpad ripple (`38431d3`):** PointerOverlay.animateClickRipple matches RN's clickRipple
 - **Bottom bar layout fix (`b18745b`):** Fixed bar ballooning to fill space + collapsing textView to 0pt; default theme now `named:classic` (Aero blue)
 
-### What's NOT done / unverified
+### What's NOT done / unverified (verified by reading the code, 2026-04-22)
 
-- **CI build workflow for Swift.** The only workflow today is the RN/Expo IPA build. Nothing has actually compiled the Swift code in CI. **Highest priority** — see §6.
-- **Crash recovery.** RN has a `LAYOUT_PENDING_KEY` flag that downgrades to mobile if the previous classic launch crashed. Swift's App.swift does not yet read or write this. If a classic-mode crash happens, the app re-crashes on next launch.
-- **App.swift is 27 LOC.** Hardwires `EditorViewController` as root with a basic UINavigationController. No Preferences boot read, no crash flag check.
-- **Outdated README.** `artifacts/ios-native/README.md` describes a layout that no longer matches reality (mentions `Editor/EditorTextView.swift`, `Tabs/`, `Sheets/` — none exist).
+- **CI build workflow for Swift.** The only workflow today is the RN/Expo IPA build (`.github/workflows/main.yml` runs `expo prebuild` against `artifacts/mobile`). Nothing has actually compiled the Swift code in CI. **Highest priority** — see §6.
+- **Crash recovery missing.** Confirmed by reading `Persistence/Preferences.swift`: there is no `pendingClassic` key, no `LAYOUT_PENDING_KEY` equivalent. RN's `ThemeContext.tsx` sets a flag on classic boot and clears it after 1.5s of stable rendering; if next launch sees the flag still set, it downgrades to mobile. Swift port has no equivalent — a classic-mode launch crash will re-crash on next launch.
+- **App.swift is 27 LOC.** `SceneDelegate.scene(_:willConnectTo:options:)` directly creates `EditorViewController(store: NotesStore.shared)`, wraps in `UINavigationController`, and shows it. No Preferences read, no crash-flag check.
+- **Outdated README.** `artifacts/ios-native/README.md` describes a layout that no longer matches reality (mentions `Editor/EditorTextView.swift`, `Tabs/TabBarView.swift`, `Sheets/ActionSheet.swift`, `Sheets/PreferencesViewController.swift`, `Trackpad/TrackpadOverlay.swift` — none of these exist).
 - **No tests.** Zero unit or UI tests in the Swift target.
-- **No Asset catalog visible in the source tree.** `Project.yml` references `LaunchBackground` and `AccentColor` color names. Either the asset catalog exists outside the source tree, or Xcode is tolerating the missing references with warnings. Worth confirming before CI.
+- **No Asset catalog visible in the source tree.** `Project.yml` references `LaunchBackground` and `AccentColor` color names. Either the asset catalog exists outside the source tree, or Xcode is tolerating the missing references with warnings. Recipient confirms clean build, so probably tolerated — but should still create the catalog before relying on it.
+- **Custom palette overlay is incomplete.** `Models/Theme.swift :: Palette.byOverlaying(overrides:onto:)` only honors 12 of the Palette's 18 fields: `background, foreground, card, primary, primaryForeground, secondary, muted, mutedForeground, accent, border, editorBackground, editorGutter`. The user CANNOT customize: `destructive, success, titleGradientStart, titleGradientEnd, chromeGradientStart, chromeGradientEnd, radius`. RN's `CUSTOM_PALETTE_KEYS` includes `destructive, highlight, titleGradientStart, titleGradientEnd, chromeGradientStart, chromeGradientEnd` — so the Swift port's custom palette is strictly less capable than RN's.
+- **Preferences storage key for tabsLayout disagrees with RN.** Swift writes to `notepad3pp.tabsLayout`; RN writes to `notepad3pp.tabsLayout.v2`. Doesn't matter today (apps don't share defaults), but if you ever introduce a migration, watch out.
+- **`onSave` callbacks in classic chrome are no-ops.** `aeroMenuBar.onSave` and `classicToolbar.onSave` are wired to empty closures with the comment "notes auto-save to disk; no explicit action". The menu items still appear though — could confuse users who expect a save indicator. RN behavior is the same (autosave only) but the Swift port might benefit from a "saved <relative time>" status bar field — verify the StatusBar already shows `savedAt` (it does, per `EditorViewController.refreshStatusBar()`).
+- **Two different "Open" code paths.** The mobile bottom bar's Open button calls `presentOpenMenu()` which builds a `UIAlertController` action sheet listing New blank / Open from Files / each open note. The keyboard accessory's Open and the classic toolbar's Docs both call `presentDocsList()` which is the proper `DocsListViewController` modal (the one commit `320003c` introduced). The action sheet is leftover and inconsistent.
 
 ---
 
@@ -210,45 +214,49 @@ After the workflow exists:
 
 ---
 
-## 7. The next 5 things in order
+## 7. The next tasks in order
 
-After CI is green, these are the actual gaps. Do them in order; later items depend on earlier ones being verified.
+After CI is green, these are the actual gaps verified by reading the code. Do them in order; later items depend on earlier ones being verified.
 
-### Task 1: Crash-recovery flag in App.swift
-- **Why:** RN's classic mode used to crash on launch and lock the app out. RN solves this with `LAYOUT_PENDING_KEY`: set on classic boot, cleared after 1.5s of stable rendering, checked at next launch.
-- **What:** In `SceneDelegate.scene(_:willConnectTo:options:)`:
-  1. Read `Preferences.shared.layoutMode` and `Preferences.shared.layoutPendingClassic` (add this key if not present).
-  2. If `layoutMode == .classic` and `layoutPendingClassic == true`, force-downgrade to `.mobile` and clear the flag.
-  3. If launching classic, set `layoutPendingClassic = true`.
-  4. In `EditorViewController.viewDidAppear`, schedule a 1.5s timer that clears the flag.
-- **RN reference:** `artifacts/mobile/context/ThemeContext.tsx` lines ~50–115 (look for `LAYOUT_PENDING_KEY`).
-- **Verify:** Add a debug menu item that does `fatalError()` mid-classic-render. Force-quit, relaunch, app should boot mobile.
+### Task 1: Crash-recovery flag (App.swift + Preferences.swift)
+- **Why:** Confirmed missing. RN's classic mode used to crash on launch and lock the app out. RN solves this with `LAYOUT_PENDING_KEY`: set on classic boot, cleared after 1.5s of stable rendering, checked at next launch.
+- **What:**
+  1. Add to `Preferences.swift`: a new key `notepad3pp.layoutMode.pendingClassic` and accessor `var pendingClassic: Bool { get / set }` — same pattern as the other typed accessors.
+  2. In `SceneDelegate.scene(_:willConnectTo:options:)`: before constructing the editor, read `Preferences.shared.layoutMode` and `Preferences.shared.pendingClassic`. If both indicate "we tried classic and didn't make it", set `Preferences.shared.layoutMode = .mobile` and clear the pending flag.
+  3. If we ARE launching classic, set `pendingClassic = true` before showing the window.
+  4. In `EditorViewController.viewDidAppear`, schedule a 1.5s timer that clears the flag (only when `prefs.layoutMode == .classic`).
+- **RN reference:** `artifacts/mobile/context/ThemeContext.tsx` lines ~50–115.
+- **Verify:** Add a DEBUG-only menu item or just temporarily insert `fatalError()` into a classic-mode subview's `layoutSubviews`. Force-quit, relaunch, app should boot mobile.
 
-### Task 2: README freshen
-- **Why:** Current README's "Layout" section is wrong. Anyone new to the repo (including the next agent) will be misled.
-- **What:** Update `artifacts/ios-native/README.md` to reflect the actual `Sources/Notepad3/` tree from §4. Add a "Status" subsection that links to this handoff.
+### Task 2: Fill the custom-palette gap
+- **Why:** Confirmed: `Palette.byOverlaying` only honors 12 of 18 fields. Users who pick "Custom" theme and tweak a destructive color or title gradient will see no effect.
+- **What:** In `Models/Theme.swift :: Palette.byOverlaying(overrides:onto:)`, add the missing fields: `destructive, success, titleGradientStart, titleGradientEnd, chromeGradientStart, chromeGradientEnd`. (Skip `radius` — it's a CGFloat, not a UIColor; if needed, parse from a numeric override key.)
+- Also: confirm that `CustomPaletteBuilderViewController` exposes UI for the new fields. If not, add rows for them (it currently only knows about a subset).
+- **Verify:** Settings → pick Custom → set destructive to red → trigger a destructive confirm dialog → button color matches.
 
-### Task 3: Asset catalog
-- **Why:** `Project.yml` references `LaunchBackground` color and `AccentColor`. If they're missing, xcodebuild may warn or fail.
+### Task 3: README freshen
+- **Why:** Current README's "Layout" section is wrong. Mentions files (`EditorTextView.swift`, `Tabs/TabBarView.swift`, `Sheets/`, `Trackpad/TrackpadOverlay.swift`) that don't exist.
+- **What:** Update `artifacts/ios-native/README.md` to reflect the actual `Sources/Notepad3/` tree from §4. Add a "Status" subsection linking to this handoff. Keep the "Why not SwiftUI" and "Why uncontrolled by default" sections — those are still accurate.
+
+### Task 4: Asset catalog
+- **Why:** `Project.yml` references `LaunchBackground` and `AccentColor`. Recipient's clean build suggests Xcode tolerates the missing catalog, but CI will be stricter.
 - **What:** Create `artifacts/ios-native/Sources/Notepad3/Assets.xcassets/` with:
-  - `AccentColor.colorset/Contents.json` — accent color
-  - `LaunchBackground.colorset/Contents.json` — launch screen background (use `palette.classic.background`)
-  - `AppIcon.appiconset/Contents.json` — at minimum a 1024×1024 placeholder so the build doesn't warn
-- **Verify:** Workflow from §6 still green.
+  - `AccentColor.colorset/Contents.json` — `palette.classic.primary` (#3a78c4)
+  - `LaunchBackground.colorset/Contents.json` — `palette.classic.background` (#dbe5f1)
+  - `AppIcon.appiconset/Contents.json` — at minimum a 1024×1024 placeholder
+- **Verify:** Workflow from §6 still green; no missing-asset warnings.
 
-### Task 4: Verification screenshots / golden path test
-- **Why:** Right now we trust commit messages. Let's prove it.
-- **What:** Add a small UI test target (or just a script using `xcrun simctl`) that:
-  1. Boots simulator with empty defaults
-  2. Launches the app
-  3. Screenshots: launch / mobile editor / mobile bottom bar / classic chrome / find bar open / tab strip
-  4. Compares against committed reference screenshots
-- This catches regressions in chrome layout (like the b18745b bottom bar bug).
-- Optional: add it as a separate workflow that runs on PR.
+### Task 5: Unify the two Open paths
+- **Why:** Confirmed inconsistency. The mobile bottom bar's Open button calls `presentOpenMenu()` (a UIAlertController action sheet listing each open note); everywhere else uses `presentDocsList()` (the proper `DocsListViewController` modal). User flows feel different depending on entry point.
+- **What:** Replace `presentOpenMenu()` with `presentDocsList()` in the mobile bottom bar handler (line 191 of `EditorViewController.swift`). Delete the now-unused `presentOpenMenu()` method (lines 1100–1113). Verify the mobile bottom bar Open button → DocsListViewController appears.
 
-### Task 5: Audit pass for RN feature parity
-- **Why:** The Swift port is 80%+ done but no one has line-by-line compared to the RN app.
-- **What:** Sit with `artifacts/mobile/app/index.tsx` (1847 LOC) and `artifacts/ios-native/Sources/Notepad3/Editor/EditorViewController.swift` (1245 LOC) and walk every menu item, every toolbar button, every action sheet row. Anything in RN but not in Swift: file an issue or fix it. Anything in Swift but not in RN: ask Corey if it's intentional.
+### Task 6: Verification screenshots / golden path test
+- **Why:** Catches regressions in chrome layout like the b18745b bottom bar bug.
+- **What:** Add a small UI test target (or `xcrun simctl` script) that boots a simulator with cleared defaults, launches the app, takes screenshots of: launch / mobile editor / mobile bottom bar / classic title bar+menu+toolbar / find bar open / find bar with replace / tab strip in tabs mode / tab strip in list mode / preferences modal / docs list modal. Compare against committed reference screenshots on PR.
+
+### Task 7: RN feature parity audit
+- **Why:** The Swift port is ~95% done by file count but no one has line-by-line walked it against RN.
+- **What:** Sit with `artifacts/mobile/app/index.tsx` (1847 LOC) and `artifacts/ios-native/Sources/Notepad3/Editor/EditorViewController.swift` (1246 LOC). For each RN menu item, toolbar button, action sheet row: confirm the Swift equivalent exists. Anything in RN but not in Swift: file an issue or fix it. Anything in Swift but not in RN: ask Corey if it's intentional (Markdown preview, language picker modal, custom palette builder are all candidates).
 - Output: a checklist in `docs/superpowers/specs/2026-04-22-rn-vs-swift-parity-audit.md`.
 
 ---
@@ -278,6 +286,9 @@ When you need to know "what does the RN app do here", grep these files first:
 | Classic title bar | `mobile/app/index.tsx :: classic chrome` | `ios-native/.../UI/Classic/ClassicTitleBar.swift + AeroMenuBar.swift + ClassicToolbar.swift + StatusBar.swift + LineGutter.swift` |
 | Crash recovery | `mobile/context/ThemeContext.tsx :: LAYOUT_PENDING_KEY + resetLayoutModeToMobile` | NOT YET PORTED (Task 1 above) |
 | Error boundary | `mobile/components/ErrorBoundary.tsx` | NOT YET PORTED |
+| Notes file on disk | RN: AsyncStorage key `pocketpad-notes-v1` | Swift: `<Documents>/notes-v1.json` (`NotesStore.url`) |
+| Open-from-Files action | `mobile/app/index.tsx :: importFromFiles` | `EditorViewController :: presentFileOpen + UIDocumentPickerDelegate` (lines 1220–1245) |
+| Mobile More sheet | `mobile/app/index.tsx :: settings sheet` | `EditorViewController :: presentMobileMore` (lines 1115–1167) |
 
 ---
 
