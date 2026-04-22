@@ -1016,16 +1016,28 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func presentDocsList() {
-        // Reuses the tab strip's context-menu actions via a simple list modal.
-        let alert = UIAlertController(title: "Open documents", message: nil, preferredStyle: .actionSheet)
-        for note in store.notes {
-            let mark = note.id == store.activeId ? "✓ " : ""
-            alert.addAction(UIAlertAction(title: "\(mark)\(note.title)", style: .default) { [weak self] _ in
-                self?.store.setActive(note.id)
-            })
+        let docs = DocsListViewController(store: store, palette: themes.palette)
+        docs.onSelect = { [weak self, weak docs] id in
+            Haptics.selectionChanged()
+            self?.store.setActive(id)
+            docs?.dismiss(animated: true)
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
+        docs.onClose = { [weak self] id in self?.confirmClose(id) }
+        docs.onRename = { [weak self] id in self?.promptRename(id) }
+        docs.onDuplicate = { [weak self] id in self?.store.duplicate(id: id) }
+        docs.onCloseOthers = { [weak self] id in self?.store.closeOthers(keep: id) }
+        docs.onNewBlank = { [weak self, weak docs] in
+            Haptics.impact(.light)
+            self?.store.createBlank()
+            docs?.dismiss(animated: true)
+        }
+        docs.onOpenFromFiles = { [weak self, weak docs] in
+            docs?.dismiss(animated: true) { [weak self] in
+                self?.presentFileOpen()
+            }
+        }
+        docs.onDismiss = { [weak docs] in docs?.dismiss(animated: true) }
+        present(docs, animated: true)
     }
 
     /// Small quick-file menu shown when the mobile bottom bar's "Open" is
