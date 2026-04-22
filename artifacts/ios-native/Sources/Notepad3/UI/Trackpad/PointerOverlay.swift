@@ -102,6 +102,33 @@ final class PointerOverlay: UIView {
 
     func applyPalette(_ p: Palette) {
         pointerImageView.tintColor = p.primary
+        rippleColor = p.primary
+    }
+
+    // MARK: Click ripple
+
+    private var rippleColor: UIColor = .label
+
+    /// Show a one-shot radiating ring at the given window point — used by the
+    /// trackpad's click handler for visual feedback. Matches RN's
+    /// `clickRipple` layer.
+    func animateClickRipple(at point: CGPoint) {
+        let diameter: CGFloat = 36
+        let ripple = UIView(frame: CGRect(x: point.x - diameter / 2, y: point.y - diameter / 2, width: diameter, height: diameter))
+        ripple.layer.cornerRadius = diameter / 2
+        ripple.layer.borderWidth = 2
+        ripple.layer.borderColor = rippleColor.cgColor
+        ripple.backgroundColor = .clear
+        ripple.isUserInteractionEnabled = false
+        ripple.alpha = 0.9
+        addSubview(ripple)
+
+        UIView.animate(withDuration: 0.35, delay: 0, options: [.curveEaseOut], animations: {
+            ripple.transform = CGAffineTransform(scaleX: 2.2, y: 2.2)
+            ripple.alpha = 0
+        }, completion: { _ in
+            ripple.removeFromSuperview()
+        })
     }
 
     // MARK: Hit testing

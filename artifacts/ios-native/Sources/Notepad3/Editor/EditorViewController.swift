@@ -996,6 +996,8 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         pad.onClick = { [weak self] point in
             guard let self else { return }
             self.pointerOverlay.pointerPosition = point
+            self.pointerOverlay.animateClickRipple(at: point)
+            Haptics.selectionChanged()
             // Resolve the click to a UI element at that window point.
             if let target = self.view.hitTest(self.view.convert(point, from: self.view.window), with: nil) as? UIControl {
                 target.sendActions(for: .touchUpInside)
@@ -1161,7 +1163,13 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private func presentAbout() {
         let alert = UIAlertController(
             title: "Notepad 3++",
-            message: "A pocket text editor that captures the feel of classic desktop notepad utilities.\nVersion 1.0.0",
+            message: """
+            A pocket text editor that captures the feel of classic desktop notepad utilities.
+
+            Multi-document tabs, find/replace, top/bottom diff, file import, line tools, syntax coloring, markdown preview, and a simulated trackpad for desktop nostalgia.
+
+            Version 1.1.0
+            """,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "OK", style: .default))
