@@ -1,17 +1,20 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// Top-level editor surface. Hosts a horizontal tab strip above a UITextView,
-/// plus navigation-bar buttons for new / open / theme / more. All content
-/// flows through `NotesStore`; visuals flow through `ThemeController`.
+/// Top-level editor surface. Hosts a collapsible find/replace bar, a
+/// horizontal tab strip, and a UITextView. Navigation-bar buttons for
+/// new / open / theme / find / more. All content flows through `NotesStore`;
+/// visuals flow through `ThemeController`.
 final class EditorViewController: UIViewController, UITextViewDelegate {
     private let store: NotesStore
     private let themes = ThemeController.shared
+    private let findBar = FindReplaceBar()
     private let tabStrip = TabStripView()
     private let separator = UIView()
     private let textView = UITextView()
     private var notesToken: UUID?
     private var themeToken: UUID?
+    private var findBarHeight: NSLayoutConstraint?
     private var lastHighlightedBody: String = ""
     private var lastHighlightedLanguage: NoteLanguage = .plain
 
@@ -25,6 +28,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        configureFindBar()
         configureTabStrip()
         configureTextView()
         layoutSubviews()
@@ -57,6 +61,18 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
     // MARK: - Configuration
 
+    private func configureFindBar() {
+        findBar.translatesAutoresizingMaskIntoConstraints = false
+        findBar.clipsToBounds = true
+        findBar.onFindChanged = { [weak self] _ in /* handled on Next */ _ = self }
+        findBar.onNext = { [weak self] in self?.findNext(backwards: false) }
+        findBar.onPrevious = { [weak self] in self?.findNext(backwards: true) }
+        findBar.onClose = { [weak self] in self?.setFindBarVisible(false) }
+        findBar.onReplaceOne = { [weak self] replacement in self?.replaceCurrent(with: replacement) }
+        findBar.onReplaceAll = { [weak self] replacement in self?.replaceAll(with: replacement) }
+        view.addSubview(findBar)
+    }
+
     private func configureTabStrip() {
         tabStrip.translatesAutoresizingMaskIntoConstraints = false
         tabStrip.onSelect = { [weak self] id in self?.store.setActive(id) }
@@ -86,8 +102,16 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func layoutSubviews() {
+        let h = findBar.heightAnchor.constraint(equalToConstant: 0)
+        findBarHeight = h
+
         NSLayoutConstraint.activate([
-            tabStrip.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            findBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            findBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            findBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            h,
+
+            tabStrip.topAnchor.constraint(equalTo: findBar.bottomAnchor),
             tabStrip.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabStrip.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tabStrip.heightAnchor.constraint(equalToConstant: 44),
@@ -114,6 +138,14 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         )
         newButton.accessibilityLabel = "New document"
 
+        let findButton = UIBarButtonItem(
+            image: UIImage(systemName: "magnifyingglass"),
+            style: .plain,
+            target: self,
+            action: #selector(toggleFind)
+        )
+        findButton.accessibilityLabel = "Find"
+
         let themeButton = UIBarButtonItem(
             image: themeIconForCurrentMode(),
             style: .plain,
@@ -129,11 +161,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         )
         moreButton.accessibilityLabel = "More actions"
 
-        navigationItem.rightBarButtonItems = [moreButton, themeButton, newButton]
+        navigationItem.rightBarButtonItems = [moreButton, themeButton, findButton, newButton]
     }
 
     private func themeIconForCurrentMode() -> UIImage? {
-        // Show the inverse icon — sun when dark (to flip to light), moon when light.
         UIImage(systemName: themes.resolvedTheme == .dark ? "sun.max" : "moon")
     }
 
@@ -151,23 +182,52 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let prefs = UIAction(title: "Preferences…", image: UIImage(systemName: "gear")) { [weak self] _ in
             self?.presentSettings()
         }
-        let duplicate = UIAction(title: "Duplicate current", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in
+
+        let lineGroup = UIMenu(title: "Line tools", image: UIImage(systemName: "list.bullet"), children: [
+            UIAction(title: "Sort lines", image: UIImage(systemName: "arrow.up.arrow.down")) { [weak self] _ in self?.sortLines() },
+            UIAction(title: "Trim trailing spaces", image: UIImage(systemName: "scissors")) { [weak self] _ in self?.trimTrailingSpaces() },
+            UIAction(title: "Duplicate current line", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in self?.duplicateCurrentLine() },
+            UIAction(title: "Delete current line", image: UIImage(systemName: "minus.square"), attributes: .destructive) { [weak self] _ in self?.deleteCurrentLine() },
+        ])
+
+        let insertDate = UIAction(title: "Insert date/time", image: UIImage(systemName: "clock")) { [weak self] _ in
+            let now = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)
+            self?.insertText(now)
+        }
+
+        let duplicate = UIAction(title: "Duplicate current doc", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in
             guard let self else { return }
             self.store.duplicate(id: self.store.activeId)
         }
-        let rename = UIAction(title: "Rename current", image: UIImage(systemName: "pencil")) { [weak self] _ in
+        let rename = UIAction(title: "Rename current doc", image: UIImage(systemName: "pencil")) { [weak self] _ in
             guard let self else { return }
             self.promptRename(self.store.activeId)
         }
-        let close = UIAction(title: "Close current", image: UIImage(systemName: "xmark"), attributes: .destructive) { [weak self] _ in
+        let close = UIAction(title: "Close current doc", image: UIImage(systemName: "xmark"), attributes: .destructive) { [weak self] _ in
             guard let self else { return }
             self.confirmClose(self.store.activeId)
         }
-        return UIMenu(title: "", children: [prefs, duplicate, rename, close])
+
+        return UIMenu(title: "", children: [prefs, lineGroup, insertDate, duplicate, rename, close])
     }
 
-    @objc private func toggleTheme() {
-        themes.quickToggleDarkLight()
+    @objc private func toggleTheme() { themes.quickToggleDarkLight() }
+
+    @objc private func toggleFind() {
+        let visible = (findBarHeight?.constant ?? 0) > 0
+        setFindBarVisible(!visible)
+    }
+
+    private func setFindBarVisible(_ visible: Bool) {
+        let target: CGFloat = visible ? (findBar.showsReplace ? 88 : 44) : 0
+        findBarHeight?.constant = target
+        UIView.animate(withDuration: 0.2) { self.view.layoutIfNeeded() }
+        if visible {
+            findBar.focusFind()
+        } else {
+            findBar.findField.resignFirstResponder()
+            findBar.replaceField.resignFirstResponder()
+        }
     }
 
     private func presentSettings() {
@@ -186,6 +246,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         textView.tintColor = palette.primary
         separator.backgroundColor = palette.border
         tabStrip.applyPalette(palette)
+        findBar.applyPalette(palette)
 
         let nav = UINavigationBarAppearance()
         nav.configureWithDefaultBackground()
@@ -195,12 +256,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         navigationItem.scrollEdgeAppearance = nav
         navigationController?.navigationBar.tintColor = palette.primary
 
-        // Sun/moon icon flips with resolved mode
-        if let items = navigationItem.rightBarButtonItems, items.count >= 2 {
+        if let items = navigationItem.rightBarButtonItems, items.count >= 3 {
             items[1].image = themeIconForCurrentMode()
         }
 
-        // Repaint the existing text with the new palette colors
         rehighlight(force: true)
     }
 
@@ -221,8 +280,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
     // MARK: - Highlighting
 
-    /// Re-run the highlighter. `force` forgets the last-highlighted cache so
-    /// theme/palette changes re-paint even if body/language are unchanged.
     private func rehighlight(force: Bool = false) {
         let body = textView.text ?? ""
         let language = store.activeNote.language
@@ -276,6 +333,127 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             self?.store.rename(id: id, title: newName)
         })
         present(alert, animated: true)
+    }
+
+    // MARK: - Find / replace
+
+    private func findNext(backwards: Bool) {
+        let needle = findBar.findField.text ?? ""
+        guard !needle.isEmpty else { return }
+        let haystack = textView.text ?? ""
+        let ns = haystack as NSString
+
+        let caret = textView.selectedRange
+        let searchRange: NSRange
+        let options: NSString.CompareOptions = backwards ? [.caseInsensitive, .backwards] : [.caseInsensitive]
+
+        if backwards {
+            searchRange = NSRange(location: 0, length: max(0, caret.location))
+        } else {
+            let start = NSMaxRange(caret)
+            searchRange = NSRange(location: min(start, ns.length), length: max(0, ns.length - start))
+        }
+
+        var found = ns.range(of: needle, options: options, range: searchRange)
+        if found.location == NSNotFound {
+            // Wrap around
+            found = ns.range(of: needle, options: options, range: NSRange(location: 0, length: ns.length))
+        }
+        guard found.location != NSNotFound else { return }
+
+        textView.selectedRange = found
+        textView.scrollRangeToVisible(found)
+    }
+
+    private func replaceCurrent(with replacement: String) {
+        let sel = textView.selectedRange
+        guard sel.length > 0 else {
+            findNext(backwards: false)
+            return
+        }
+        let ns = (textView.text ?? "") as NSString
+        let updated = ns.replacingCharacters(in: sel, with: replacement) as String
+        commitReplacement(updated, selectionAfter: NSRange(location: sel.location + (replacement as NSString).length, length: 0))
+        findNext(backwards: false)
+    }
+
+    private func replaceAll(with replacement: String) {
+        let needle = findBar.findField.text ?? ""
+        guard !needle.isEmpty else { return }
+        let ns = (textView.text ?? "") as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        let updated = ns.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive], range: full)
+        commitReplacement(updated, selectionAfter: NSRange(location: 0, length: 0))
+    }
+
+    /// Writes `newBody` to both the native UITextView (so the user sees it
+    /// immediately) and the store (so persistence + observers fire).
+    private func commitReplacement(_ newBody: String, selectionAfter: NSRange) {
+        textView.text = newBody
+        let len = (newBody as NSString).length
+        let sel = NSRange(location: min(selectionAfter.location, len), length: min(selectionAfter.length, len - min(selectionAfter.location, len)))
+        textView.selectedRange = sel
+        store.updateActive(body: newBody)
+        rehighlight(force: true)
+    }
+
+    // MARK: - Line tools
+
+    private func sortLines() {
+        let body = textView.text ?? ""
+        let sorted = body.split(separator: "\n", omittingEmptySubsequences: false)
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            .joined(separator: "\n")
+        commitReplacement(sorted, selectionAfter: NSRange(location: 0, length: 0))
+    }
+
+    private func trimTrailingSpaces() {
+        let body = textView.text ?? ""
+        let trimmed = body.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.replacingOccurrences(of: #"[ \t]+$"#, with: "", options: .regularExpression) }
+            .joined(separator: "\n")
+        commitReplacement(trimmed, selectionAfter: textView.selectedRange)
+    }
+
+    private func duplicateCurrentLine() {
+        let body = textView.text ?? ""
+        let ns = body as NSString
+        let caret = textView.selectedRange.location
+        let (lineStart, lineEnd) = lineRange(in: ns, at: caret)
+        let line = ns.substring(with: NSRange(location: lineStart, length: lineEnd - lineStart))
+        let inserted = "\n" + line
+        let newBody = ns.replacingCharacters(in: NSRange(location: lineEnd, length: 0), with: inserted)
+        commitReplacement(newBody, selectionAfter: NSRange(location: caret + (inserted as NSString).length, length: 0))
+    }
+
+    private func deleteCurrentLine() {
+        let body = textView.text ?? ""
+        let ns = body as NSString
+        let caret = textView.selectedRange.location
+        let (lineStart, lineEnd) = lineRange(in: ns, at: caret)
+        // Also consume trailing newline if present
+        let removeEnd = (lineEnd < ns.length && ns.character(at: lineEnd) == 0x0A /* \n */) ? lineEnd + 1 : lineEnd
+        let newBody = ns.replacingCharacters(in: NSRange(location: lineStart, length: removeEnd - lineStart), with: "")
+        commitReplacement(newBody, selectionAfter: NSRange(location: lineStart, length: 0))
+    }
+
+    private func insertText(_ value: String) {
+        let sel = textView.selectedRange
+        let ns = (textView.text ?? "") as NSString
+        let newBody = ns.replacingCharacters(in: sel, with: value)
+        let nextCaret = sel.location + (value as NSString).length
+        commitReplacement(newBody, selectionAfter: NSRange(location: nextCaret, length: 0))
+    }
+
+    /// Returns (start, end) where start is inclusive (or start-of-text) and
+    /// end is exclusive of the trailing newline character.
+    private func lineRange(in ns: NSString, at location: Int) -> (Int, Int) {
+        let clamped = max(0, min(location, ns.length))
+        var start = clamped
+        while start > 0, ns.character(at: start - 1) != 0x0A { start -= 1 }
+        var end = clamped
+        while end < ns.length, ns.character(at: end) != 0x0A { end += 1 }
+        return (start, end)
     }
 }
 

@@ -13,9 +13,11 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
     }
 
     private var sections: [Section] {
-        let explicit: [Row] = ThemeName.allCases.map { name in
-            .themePreference(.named(name), label: label(for: name), hint: hint(for: name))
-        }
+        // Hide `.custom` until the palette picker UI exists — showing a
+        // no-op option is worse than hiding it.
+        let explicit: [Row] = ThemeName.allCases
+            .filter { $0 != .custom }
+            .map { name in .themePreference(.named(name), label: label(for: name), hint: hint(for: name)) }
         let system: Row = .themePreference(.system, label: "Match system", hint: "Flip light ↔ dark with the OS")
         return [
             Section(title: "Theme", rows: [system] + explicit)
@@ -119,7 +121,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         case .retro:     return "Retro"
         case .modern:    return "Modern"
         case .cyberpunk: return "Cyberpunk"
-        case .sunset:    return "Sunset"
+        case .sunset:    return "Rachel's Sunset"
         case .custom:    return "Custom"
         }
     }
@@ -130,9 +132,9 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         case .light:     return "Clean and bright"
         case .dark:      return "Easy on the eyes"
         case .retro:     return "Windows 95 chrome"
-        case .modern:    return "Soft contemporary"
-        case .cyberpunk: return "Neon on black"
-        case .sunset:    return "Warm gradient"
+        case .modern:    return "Soft, rounded, indigo"
+        case .cyberpunk: return "Neon magenta and cyan"
+        case .sunset:    return "Orange, turquoise and hot pink"
         case .custom:    return "Your own palette"
         }
     }

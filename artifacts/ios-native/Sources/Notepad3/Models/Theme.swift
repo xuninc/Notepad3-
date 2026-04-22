@@ -110,13 +110,104 @@ extension Palette {
         radius: 6
     )
 
+    static let retro = Palette(
+        background: hex("#c0c0c0"),
+        foreground: hex("#000000"),
+        card: hex("#c0c0c0"),
+        primary: hex("#000080"),
+        primaryForeground: hex("#ffffff"),
+        secondary: hex("#a8a8a8"),
+        muted: hex("#d4d0c8"),
+        mutedForeground: hex("#404040"),
+        accent: hex("#000080"),
+        border: hex("#808080"),
+        editorBackground: hex("#ffffff"),
+        editorGutter: hex("#dcdcdc"),
+        destructive: hex("#800000"),
+        success: hex("#005900"),
+        titleGradientStart: hex("#000080"),
+        titleGradientEnd: hex("#000080"),
+        chromeGradientStart: hex("#c0c0c0"),
+        chromeGradientEnd: hex("#c0c0c0"),
+        radius: 0
+    )
+
+    static let modern = Palette(
+        background: hex("#f8fafc"),
+        foreground: hex("#0f172a"),
+        card: hex("#ffffff"),
+        primary: hex("#6366f1"),
+        primaryForeground: hex("#ffffff"),
+        secondary: hex("#eef2ff"),
+        muted: hex("#f1f5f9"),
+        mutedForeground: hex("#64748b"),
+        accent: hex("#8b5cf6"),
+        border: hex("#e2e8f0"),
+        editorBackground: hex("#ffffff"),
+        editorGutter: hex("#f8fafc"),
+        destructive: hex("#ef4444"),
+        success: hex("#10b981"),
+        titleGradientStart: hex("#ffffff"),
+        titleGradientEnd: hex("#f8fafc"),
+        chromeGradientStart: hex("#ffffff"),
+        chromeGradientEnd: hex("#f1f5f9"),
+        radius: 12
+    )
+
+    static let sunset = Palette(
+        background: hex("#fff6fa"),
+        foreground: hex("#3a1a3a"),
+        card: hex("#ffffff"),
+        primary: hex("#ff3d8a"),
+        primaryForeground: hex("#ffffff"),
+        secondary: hex("#ffd6e6"),
+        muted: hex("#eaf3fb"),
+        mutedForeground: hex("#6e3a5e"),
+        accent: hex("#ff7a3d"),
+        border: hex("#ffb3d1"),
+        editorBackground: hex("#fffafd"),
+        editorGutter: hex("#ffe8f1"),
+        destructive: hex("#c0264e"),
+        success: hex("#8fd9b8"),
+        titleGradientStart: hex("#ff7a3d"),
+        titleGradientEnd: hex("#ff3d8a"),
+        chromeGradientStart: hex("#d8f1e4"),
+        chromeGradientEnd: hex("#d6ecff"),
+        radius: 8
+    )
+
+    static let cyberpunk = Palette(
+        background: hex("#0b0820"),
+        foreground: hex("#f0f6ff"),
+        card: hex("#150f33"),
+        primary: hex("#ff2bd1"),
+        primaryForeground: hex("#0b0820"),
+        secondary: hex("#1f1850"),
+        muted: hex("#161139"),
+        mutedForeground: hex("#9af7ff"),
+        accent: hex("#00f0ff"),
+        border: hex("#ff2bd1"),
+        editorBackground: hex("#070518"),
+        editorGutter: hex("#0e0a26"),
+        destructive: hex("#ff5577"),
+        success: hex("#76ff7a"),
+        titleGradientStart: hex("#ff2bd1"),
+        titleGradientEnd: hex("#7b00ff"),
+        chromeGradientStart: hex("#1a1340"),
+        chromeGradientEnd: hex("#0e0a26"),
+        radius: 2
+    )
+
     static func palette(for name: ThemeName) -> Palette {
         switch name {
-        case .classic: return .classic
-        case .light: return .light
-        case .dark: return .dark
-        // TODO: retro, modern, cyberpunk, sunset, custom
-        case .retro, .modern, .cyberpunk, .sunset, .custom: return .light
+        case .classic:   return .classic
+        case .light:     return .light
+        case .dark:      return .dark
+        case .retro:     return .retro
+        case .modern:    return .modern
+        case .sunset:    return .sunset
+        case .cyberpunk: return .cyberpunk
+        case .custom:    return .light // custom palette builder not yet wired
         }
     }
 }
