@@ -41,7 +41,19 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
     // Mode state (not persisted)
     private var zenMode = false
-    private var readMode = false { didSet { textView.isEditable = !readMode; keyboardAccessory.readMode = readMode } }
+    private var readMode = false {
+        didSet {
+            textView.isEditable = !readMode
+            keyboardAccessory.readMode = readMode
+            // Read-only has to be visually loud so the user isn't surprised
+            // when taps don't register: lock icon in the nav title,
+            // destructive-tinted title, muted editor background, and an
+            // explicit Exit button on the left so there's no hunting for
+            // the way out.
+            refreshChromeForReadMode()
+            refreshStatusBar()
+        }
+    }
     private var toolbarOpen = true
 
     // Observer tokens
@@ -196,7 +208,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         mobileBottomBar.onOpen = { [weak self] in Haptics.selectionChanged(); self?.presentDocsList() }
         mobileBottomBar.onFind = { [weak self] in Haptics.selectionChanged(); self?.toggleFind() }
         mobileBottomBar.onCompare = { [weak self] in Haptics.selectionChanged(); self?.presentCompare() }
-        mobileBottomBar.onNew = { [weak self] in Haptics.impact(.light); self?.store.createBlank() }
         mobileBottomBar.onMore = { [weak self] in Haptics.selectionChanged(); self?.presentMobileMore() }
         view.addSubview(mobileBottomBar)
 
@@ -522,6 +533,77 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         navigationItem.rightBarButtonItems = [moreButton, themeButton, findButton, newButton]
     }
 
+    // MARK: - Read-only chrome
+
+    /// Keeps the visible read-only signals in sync with `readMode`:
+    ///  - nav `titleView` swaps in a `lock.fill` + "<title> · Read only"
+    ///    pair tinted in `palette.destructive` when the buffer is locked;
+    ///    reverts to the default title string when editing resumes
+    ///  - editor background shifts from `editorBackground` → `muted`, a
+    ///    subtle but unambiguous cue that the paper is "paused"
+    ///  - a leftmost `pencil.slash` bar button appears so there's an
+    ///    always-visible way back to editing (not buried in a menu)
+    ///
+    /// Safe to call on every palette change, every store sync, and every
+    /// readMode flip — the branches are cheap and idempotent.
+    private func refreshChromeForReadMode() {
+        let palette = themes.palette
+        textView.backgroundColor = readMode ? palette.muted : palette.editorBackground
+
+        let raw = store.activeNote.title
+        title = raw
+
+        if readMode {
+            navigationItem.titleView = makeReadOnlyTitleView(title: raw, palette: palette)
+            if navigationItem.leftBarButtonItem == nil {
+                let exit = UIBarButtonItem(
+                    image: UIImage(systemName: "pencil.slash"),
+                    style: .plain,
+                    target: self,
+                    action: #selector(exitReadMode)
+                )
+                exit.accessibilityLabel = "Exit read mode"
+                exit.tintColor = palette.destructive
+                navigationItem.leftBarButtonItem = exit
+            } else {
+                navigationItem.leftBarButtonItem?.tintColor = palette.destructive
+            }
+        } else {
+            navigationItem.titleView = nil
+            navigationItem.leftBarButtonItem = nil
+        }
+    }
+
+    private func makeReadOnlyTitleView(title raw: String, palette: Palette) -> UIView {
+        let icon = UIImageView(image: UIImage(systemName: "lock.fill",
+                                              withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
+        icon.tintColor = palette.destructive
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+
+        let label = UILabel()
+        label.text = "\(raw) · Read only"
+        label.font = .systemFont(ofSize: 17, weight: .semibold)
+        label.textColor = palette.destructive
+        label.numberOfLines = 1
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 6
+        stack.isAccessibilityElement = true
+        stack.accessibilityTraits = .header
+        stack.accessibilityLabel = "Read only. \(raw)"
+        return stack
+    }
+
+    @objc private func exitReadMode() {
+        Haptics.selectionChanged()
+        readMode = false
+    }
+
     private func themeIconForCurrentMode() -> UIImage? {
         UIImage(systemName: themes.resolvedTheme == .dark ? "sun.max" : "moon")
     }
@@ -613,6 +695,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             items[1].image = themeIconForCurrentMode()
         }
 
+        // Read-mode chrome re-paints the editor bg + titleView in the new
+        // palette; harmless when readMode is off.
+        refreshChromeForReadMode()
+
         rehighlight(force: true)
     }
 
@@ -644,6 +730,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         }
         title = note.title
         classicTitleBar.setTitle(note.title)
+        refreshChromeForReadMode()
         tabStrip.reload(notes: store.notes, activeId: store.activeId)
         rehighlight(force: true)
         refreshStatusBar()
@@ -665,7 +752,8 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             lineEndings: StatusBar.detectLineEndings(in: body),
             savedAt: store.activeNote.updatedAt,
             language: store.activeNote.language,
-            theme: themes.resolvedTheme
+            theme: themes.resolvedTheme,
+            readOnly: readMode
         )
     }
 

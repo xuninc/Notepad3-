@@ -1,15 +1,16 @@
 import UIKit
 
-/// Bottom chrome for the mobile layout. Five equal-width tap targets —
-/// Open, Find, Compare, New, More — each with an SF Symbol glyph stacked
+/// Bottom chrome for the mobile layout. Four equal-width tap targets —
+/// File, Find, Compare, More — each with an SF Symbol glyph stacked
 /// over a tiny caption. The bar pins to the bottom safe-area inset and
 /// owns no state; callers flip palettes via `applyPalette(_:)` and react
-/// to taps through the exposed closures. Mirrors the RN `mobileBottomBar`.
+/// to taps through the exposed closures. "New document" is reachable from
+/// the FAB (+) and from the File action sheet, so there's no dedicated
+/// New cell here.
 final class MobileBottomBar: UIView {
     var onOpen: (() -> Void)?
     var onFind: (() -> Void)?
     var onCompare: (() -> Void)?
-    var onNew: (() -> Void)?
     var onMore: (() -> Void)?
 
     private let stack = UIStackView()
@@ -17,16 +18,14 @@ final class MobileBottomBar: UIView {
     private let openButton: BottomButton
     private let findButton: BottomButton
     private let compareButton: BottomButton
-    private let newButton: BottomButton
     private let moreButton: BottomButton
 
     private var palette: Palette = .light
 
     override init(frame: CGRect) {
-        openButton    = BottomButton(symbol: "list.bullet",           title: "Open")
+        openButton    = BottomButton(symbol: "folder",                title: "File")
         findButton    = BottomButton(symbol: "magnifyingglass",       title: "Find")
         compareButton = BottomButton(symbol: "rectangle.split.1x2",   title: "Compare")
-        newButton     = BottomButton(symbol: "square.and.pencil",     title: "New")
         moreButton    = BottomButton(symbol: "ellipsis",              title: "More")
         super.init(frame: frame)
         setup()
@@ -47,13 +46,12 @@ final class MobileBottomBar: UIView {
         stack.spacing = 0
         addSubview(stack)
 
-        let buttons = [openButton, findButton, compareButton, newButton, moreButton]
+        let buttons = [openButton, findButton, compareButton, moreButton]
         buttons.forEach { stack.addArrangedSubview($0) }
 
         openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
         findButton.addTarget(self, action: #selector(findTapped), for: .touchUpInside)
         compareButton.addTarget(self, action: #selector(compareTapped), for: .touchUpInside)
-        newButton.addTarget(self, action: #selector(newTapped), for: .touchUpInside)
         moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
 
         NSLayoutConstraint.activate([
@@ -75,13 +73,12 @@ final class MobileBottomBar: UIView {
         palette = p
         backgroundColor = p.card
         separator.backgroundColor = p.border
-        [openButton, findButton, compareButton, newButton, moreButton].forEach { $0.applyPalette(p) }
+        [openButton, findButton, compareButton, moreButton].forEach { $0.applyPalette(p) }
     }
 
     @objc private func openTapped()    { onOpen?() }
     @objc private func findTapped()    { onFind?() }
     @objc private func compareTapped() { onCompare?() }
-    @objc private func newTapped()     { onNew?() }
     @objc private func moreTapped()    { onMore?() }
 }
 

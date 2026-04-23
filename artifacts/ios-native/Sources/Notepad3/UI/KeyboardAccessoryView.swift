@@ -236,7 +236,13 @@ final class KeyboardAccessoryView: UIView {
     }
 
     private func makeItems() -> [Item] {
-        let hide = KbButton(symbol: "chevron.down", label: "Hide") { [weak self] in self?.onHide?() }
+        // Hide is leftmost and rides the primary tint full-time so it reads
+        // as an always-available escape hatch — tapping it dismisses the
+        // keyboard while leaving the document editable, distinct from Read
+        // mode which locks the buffer. `isActive` is how KbButton renders
+        // "emphasised, palette.primary-tinted."
+        let hide = KbButton(symbol: "keyboard.chevron.compact.down", label: "Hide") { [weak self] in self?.onHide?() }
+        hide.isActive = true
         let read = KbButton(symbol: readMode ? "eye" : "eye.slash", label: "Read") { [weak self] in self?.onReadToggle?() }
         read.isActive = readMode
         readButton = read

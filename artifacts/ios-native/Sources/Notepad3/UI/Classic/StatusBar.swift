@@ -22,11 +22,14 @@ final class StatusBar: UIView {
     private let encodingLabel = UILabel()
     private let lineEndingsLabel = UILabel()
     private let savedLabel = UILabel()
+    private let readOnlyLabel = UILabel()
     private let languageButton = UIButton(type: .system)
     private let themeButton = UIButton(type: .system)
     private var separators: [UIView] = []
     /// Separator rule that precedes the selection-length label — hidden with it.
     private var selectionRule: UIView?
+    /// Separator rule that precedes the read-only label — hidden with it.
+    private var readOnlyRule: UIView?
     private var palette: Palette = .classic
 
     /// Formatter for the "Saved HH:mm" suffix. 24-hour to match the contract.
@@ -56,11 +59,16 @@ final class StatusBar: UIView {
         stack.spacing = 6
         addSubview(stack)
 
-        for label in [cursorLabel, countsLabel, selectionLabel, encodingLabel, lineEndingsLabel, savedLabel] {
+        for label in [cursorLabel, countsLabel, selectionLabel, encodingLabel, lineEndingsLabel, savedLabel, readOnlyLabel] {
             label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
             label.setContentHuggingPriority(.required, for: .horizontal)
             label.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
+        // "READ ONLY" rides a semibold weight + destructive color so it's
+        // the loudest thing on the bar when active — you shouldn't be able
+        // to miss it while scanning the chrome.
+        readOnlyLabel.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
+        readOnlyLabel.text = "READ ONLY"
 
         configureTextButton(languageButton, accessibility: "Change language")
         configureTextButton(themeButton, accessibility: "Change theme")
@@ -84,6 +92,11 @@ final class StatusBar: UIView {
         stack.addArrangedSubview(encodingLabel)
         stack.addArrangedSubview(makeVerticalRule())
         stack.addArrangedSubview(lineEndingsLabel)
+        // Read-only cell + its leading rule toggle together.
+        let roRule = makeVerticalRule()
+        readOnlyRule = roRule
+        stack.addArrangedSubview(roRule)
+        stack.addArrangedSubview(readOnlyLabel)
         stack.addArrangedSubview(makeVerticalRule())
         stack.addArrangedSubview(languageButton)
         stack.addArrangedSubview(makeVerticalRule())
@@ -120,6 +133,7 @@ final class StatusBar: UIView {
         languageButton.setTitle("Plain", for: .normal)
         themeButton.setTitle("Classic", for: .normal)
         setSelectionVisible(false)
+        setReadOnlyVisible(false)
         savedLabel.isHidden = true
     }
 
@@ -162,6 +176,11 @@ final class StatusBar: UIView {
         // stack view slot cleanly so no dangling `|` remains.
     }
 
+    private func setReadOnlyVisible(_ visible: Bool) {
+        readOnlyLabel.isHidden = !visible
+        readOnlyRule?.superview?.isHidden = !visible
+    }
+
     // MARK: - Public API
 
     /// Detect CRLF vs LF from the buffer. Empty bodies report `.lf`.
@@ -178,7 +197,8 @@ final class StatusBar: UIView {
                 lineEndings: LineEndings,
                 savedAt: Date?,
                 language: NoteLanguage,
-                theme: ThemeName) {
+                theme: ThemeName,
+                readOnly: Bool) {
         cursorLabel.text = "Ln \(cursorLine), Col \(cursorColumn)"
         countsLabel.text = "\(lineCount) lines, \(charCount) characters"
 
@@ -187,6 +207,7 @@ final class StatusBar: UIView {
             selectionLabel.text = "selection \(selectionLength) chars"
         }
         setSelectionVisible(hasSelection)
+        setReadOnlyVisible(readOnly)
 
         encodingLabel.text = "UTF-8"
         lineEndingsLabel.text = lineEndings.rawValue
@@ -205,8 +226,8 @@ final class StatusBar: UIView {
 
     /// Legacy overload — existing call sites keep compiling while they migrate
     /// to the richer signature. Forwards with sensible defaults: no selection,
-    /// LF endings, no saved timestamp.
-    @available(*, deprecated, message: "Use update(cursorLine:cursorColumn:lineCount:charCount:selectionLength:lineEndings:savedAt:language:theme:)")
+    /// LF endings, no saved timestamp, editable buffer.
+    @available(*, deprecated, message: "Use update(cursorLine:cursorColumn:lineCount:charCount:selectionLength:lineEndings:savedAt:language:theme:readOnly:)")
     func update(cursorLine: Int,
                 cursorColumn: Int,
                 lineCount: Int,
@@ -221,7 +242,8 @@ final class StatusBar: UIView {
                lineEndings: .lf,
                savedAt: nil,
                language: language,
-               theme: theme)
+               theme: theme,
+               readOnly: false)
     }
 
     func applyPalette(_ p: Palette) {
@@ -234,6 +256,7 @@ final class StatusBar: UIView {
         selectionLabel.textColor = p.accent
         encodingLabel.textColor = p.foreground
         lineEndingsLabel.textColor = p.foreground
+        readOnlyLabel.textColor = p.destructive
         savedLabel.textColor = p.success
         languageButton.tintColor = p.primary
         themeButton.tintColor = p.primary
