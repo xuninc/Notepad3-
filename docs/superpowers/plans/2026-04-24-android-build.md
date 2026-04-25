@@ -8,6 +8,8 @@
 
 **Tech Stack:** Expo SDK 54 (~54.0.27), React Native 0.81.5 with new architecture, Java 17 (Temurin), Android Gradle Plugin 8.x, Gradle 8.x, pnpm 9 workspaces, Node 20.
 
+**Execution result:** Success on first run. Tasks 1, 6, 7, 8 ran; Tasks 2–5 (failure-handling branches) were not needed because gradle assembleDebug passed clean on the wiring commit `b0332de`. See `docs/superpowers/handoffs/2026-04-24-android-build-handoff.md` for the verified state.
+
 **Files:**
 - Modify: `artifacts/mobile/app.json` — Android `package` (already added: `com.corey.android.np3plusplus`)
 - Modify: `artifacts/mobile/package.json` — `prebuild:android` script (already added)
@@ -23,7 +25,7 @@ The first cut of all four files was committed in `b0332de` and has progressed th
 
 **Files:** none
 
-- [ ] **Step 1: Block on the run until terminal**
+- [x] **Step 1: Block on the run until terminal**
 
 ```bash
 gh run watch 24921462661 --exit-status
@@ -31,7 +33,7 @@ gh run watch 24921462661 --exit-status
 
 Exits 0 on success, non-zero on failure. Cleaner than poll loops.
 
-- [ ] **Step 2: If success, jump to Task 6 (verify artifact)**
+- [x] **Step 2: If success, jump to Task 6 (verify artifact)**
 
 - [ ] **Step 3: If failure, capture the failed step's log**
 
@@ -238,11 +240,11 @@ Bypassing the matrix with raw `pnpm add` can resolve at install but crash at run
 
 ---
 
-### Task 6: Verify the APK artifact
+### Task 6: Verify the APK artifact ✓ (executed)
 
 **Files:** none
 
-- [ ] **Step 1: Confirm successful run**
+- [x] **Step 1: Confirm successful run**
 
 ```bash
 gh run list --workflow=build-android.yml --limit 1 --json conclusion,databaseId
@@ -250,7 +252,7 @@ gh run list --workflow=build-android.yml --limit 1 --json conclusion,databaseId
 
 Expected: `"conclusion": "success"`.
 
-- [ ] **Step 2: Download the artifact**
+- [x] **Step 2: Download the artifact**
 
 ```bash
 mkdir -p /tmp/np3pp-android && cd /tmp/np3pp-android
@@ -260,7 +262,7 @@ ls -lah
 
 Expected: one or more `*.apk` files (likely `app-debug.apk`, ~30–60 MB).
 
-- [ ] **Step 3: Sanity-check the APK (works without aapt2 on WSL)**
+- [x] **Step 3: Sanity-check the APK (works without aapt2 on WSL)**
 
 ```bash
 # unzip listing — confirms it's a real APK
@@ -274,16 +276,16 @@ unzip -p app-debug.apk META-INF/CERT.RSA 2>/dev/null \
 
 Expected: package contains `com.corey.android.np3plusplus`, label visible as `Notepad 3++`, debug-keystore cert (CN=Android Debug).
 
-- [ ] **Step 4: Commit nothing; this task is verification only**
+- [x] **Step 4: Commit nothing; this task is verification only**
 
 ---
 
-### Task 7: Write the handoff doc
+### Task 7: Write the handoff doc ✓ (executed)
 
 **Files:**
 - Create: `docs/superpowers/handoffs/2026-04-24-android-build-handoff.md`
 
-- [ ] **Step 1: Write the handoff with concrete state**
+- [x] **Step 1: Write the handoff with concrete state**
 
 ```markdown
 # Android Build Handoff — 2026-04-24
@@ -321,26 +323,18 @@ Green. `Build Android` workflow on `main` produces a sideload-able debug APK.
 - Wiring into Replit "artifacts" surface — not in scope
 ```
 
-- [ ] **Step 2: Commit + push**
+- [x] **Step 2: Commit + push**
 
-```bash
-git add docs/superpowers/handoffs/2026-04-24-android-build-handoff.md
-git commit -m "docs(android): build handoff after first green CI run"
-git push origin main
-```
+Done in commit `7f73765` (bundled with this plan).
 
 ---
 
-### Task 8: Final advisor checkpoint
+### Task 8: Final advisor checkpoint ✓ (executed)
 
 **Files:** none
 
-- [ ] **Step 1: Call advisor with the full execution transcript**
+- [x] **Step 1: Call advisor with the full execution transcript**
 
-The advisor should confirm:
-- The APK is real (not a 0-byte upload)
-- The applicationId / label match expectations
-- No silent shortcuts taken (e.g. didn't disable a critical module)
-- Plan items are all checked off or explicitly deferred
+Advisor confirmed: APK byte-correct, no silent shortcuts, reproducibility intact, trigger semantics match iOS pattern. Two cosmetic notes (this header + handoff runtime-verification note) applied below.
 
-- [ ] **Step 2: Address any feedback before declaring done**
+- [x] **Step 2: Address any feedback before declaring done**

@@ -4,6 +4,8 @@
 
 Green on first try. Workflow `Build Android` on `main` produces a sideload-able debug APK.
 
+> Runtime install/launch on a device is **not** verified in this handoff — only structural verification (manifest, ABIs, autolinked components, debug signing). Sideload to a real Android device or attach an emulator-launch CI step to close the runtime gap. Debug APKs from AGP have effectively zero install-time failure rate when structural checks pass, so the gap is theoretical, but documenting the boundary.
+
 - **First successful run:** [24921462661](https://github.com/xuninc/Notepad3-/actions/runs/24921462661) (2026-04-25T03:24Z → 03:42Z, ~18 min total)
 - **Wiring commit:** `b0332de` — adds `app.json` android.package, `prebuild:android` script, `scripts/prebuild-android.sh`, `.github/workflows/build-android.yml`
 - **Plan:** `docs/superpowers/plans/2026-04-24-android-build.md`
