@@ -17,9 +17,6 @@
             "supportsTablet": false,
       "bundleIdentifier": "com.corey.ios.np3plusplus"
     },
-    "android": {
-      "package": "com.corey.android.np3plusplus"
-    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
