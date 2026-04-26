@@ -325,10 +325,16 @@ private final class TabCell: UIControl {
             closeButton.widthAnchor.constraint(equalToConstant: 22),
             closeButton.heightAnchor.constraint(equalToConstant: 22),
 
-            heightAnchor.constraint(equalToConstant: 32),
             widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
             widthAnchor.constraint(lessThanOrEqualToConstant: 240),
         ])
+
+        // Cell wants to be 32pt tall but the parent stack inside the tab
+        // strip's scroll view is forced to (scrollHeight − 12); making this
+        // .defaultHigh lets auto-layout pick the parent's value gracefully.
+        let cellHeight = heightAnchor.constraint(equalToConstant: 32)
+        cellHeight.priority = .defaultHigh
+        cellHeight.isActive = true
 
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
         addInteraction(UIContextMenuInteraction(delegate: self))

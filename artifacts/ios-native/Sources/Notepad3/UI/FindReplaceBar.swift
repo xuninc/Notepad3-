@@ -121,11 +121,16 @@ final class FindReplaceBar: UIView {
         replaceField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         replaceRow.addSubview(replaceStack)
 
+        let findRowHeight = findRow.heightAnchor.constraint(equalToConstant: 44)
+        // .defaultHigh so it breaks gracefully when callers collapse the
+        // bar to 0 height (e.g. when find/replace is hidden).
+        findRowHeight.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
             findRow.topAnchor.constraint(equalTo: topAnchor),
             findRow.leadingAnchor.constraint(equalTo: leadingAnchor),
             findRow.trailingAnchor.constraint(equalTo: trailingAnchor),
-            findRow.heightAnchor.constraint(equalToConstant: 44),
+            findRowHeight,
 
             findStack.topAnchor.constraint(equalTo: findRow.topAnchor, constant: 4),
             findStack.leadingAnchor.constraint(equalTo: findRow.leadingAnchor, constant: 8),

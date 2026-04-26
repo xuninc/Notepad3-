@@ -115,8 +115,6 @@ final class AeroMenuBar: UIView {
         stack.addArrangedSubview(filler)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 24),
-
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: topAnchor),
