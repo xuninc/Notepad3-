@@ -135,6 +135,7 @@ final class AeroMenuBar: UIView {
             completion(provider().children)
         }
         let rootMenu = UIMenu(title: title, children: [deferred])
+        rootMenu.preferredElementSize = .small
 
         var cfg = UIButton.Configuration.plain()
         cfg.title = title
