@@ -23,11 +23,12 @@ Both must implement the feature. The data model is shared in spirit; persistence
 ## 2. Goals & Non-goals
 
 **Goals:**
-- Users can pin any toolbar button to the **start** or **end** of any row via two paths: (a) a **settings panel** with a 3-state choice per button (none / pin to start / pin to end) — plus row selector when 2-row mode is on — and (b) **drag-and-drop** in an explicit edit mode.
+- Users can pin any toolbar button to the **start** or **end** of any row via two paths: (a) a **settings panel** with a 3-state choice per button (none / pin to start / pin to end) — plus row selector when `toolbarRows > 1` — and (b) **drag-and-drop** in an explicit edit mode.
 - Pinned buttons stay visible while the middle (scrolling) region scrolls.
 - Pin state persists across launches.
 - Feature parity between the iOS-native Swift toolbar and the RN toolbar.
-- 1-row ↔ 2-row mode transitions handle pinned buttons without losing user intent (see §6).
+- **Generalize `toolbarRows` from `single | double` to an integer 1–4** so users can explicitly pick a 3- or 4-row toolbar without having to overflow it via pinning.
+- N-row migrations (any N ↔ M in 1–4) handle pinned buttons without losing user intent (see §6).
 
 **Non-goals (deferred):**
 - **Mobile/phone chrome** (`MobileBottomBar`, `MobileFAB`, `MobileActionSheet`). The classic toolbar is the only target.
@@ -58,10 +59,12 @@ A user's pin state is a map keyed by stable button ID:
 ToolbarPins = {
   [buttonId: string]: {
     side: "start" | "end",
-    row: 1 | 2     // ignored when toolbarRows == "single"; always 1 in that mode
+    row: 1..N      // 1-indexed; N = current toolbarRows value (1–4)
   }
 }
 ```
+
+If `row` exceeds the current `toolbarRows` value (e.g. user dropped row count from 3 to 2), the renderer clamps it to the highest existing row at read time; the persisted value is updated lazily on next pin-state write. See §6 for migration semantics when the row count changes.
 
 Stable IDs already exist in both runtimes (`tb-new`, `tb-open`, `tb-save`, …, `tb-edit` (new), …). The `items()` array in the Swift toolbar and the `items` array in the RN render block are the canonical ID source.
 
@@ -89,7 +92,7 @@ No hard cap on pinned button count. Static zones grow vertically — they **stac
 
 - **Stacking trigger:** each static-zone sub-row caps at **35% of the toolbar's visible width** (computed at layout time; accounts for label visibility, so a sub-row holds fewer buttons when labels are on). When a new pin would exceed this width on the current sub-row, it starts a new sub-row immediately beneath. Pinned buttons fill from the outer edge inward, then stack downward.
 - **Row height grows** to fit the tallest column among `(left static zone, scrolling middle, right static zone)`. The scrolling middle remains a single row of buttons; its buttons stay vertically centered in the now-taller row container.
-- **2-row toolbar mode:** each toolbar row stacks independently — row 1's static zones can grow vertically within row 1, and row 2's likewise within row 2. The total toolbar height = sum of each row's expanded height + inter-row rule.
+- **Multi-row toolbar mode:** each toolbar row stacks independently — every row's static zones can grow vertically within that row, with no influence on neighboring rows. The total toolbar height = sum of each row's expanded height + (N−1) inter-row rules.
 - **Hard backstop — min 80 pt scrolling middle.** Even with stacking, the scrolling region must retain at least 80 pt of horizontal width. A pin that would still violate this after stacking (i.e. both static zones are already at their 35% width-per-sub-row caps and the scrolling middle is at 80 pt) is **refused** with an error haptic (Swift: `Haptics.error()` from `UI/Haptics.swift`; RN: `Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)` from `expo-haptics`). Settings-panel refusals show an inline note next to the offending row ("Not enough room — unpin one first").
 - **Resize / rotation:** thresholds re-evaluated; sub-row counts may grow or shrink as available width changes. **Pins are never auto-unpinned** by a resize — if shrinking the window makes the layout impossible, the scrolling middle holds its 80 pt floor and the static zones may temporarily exceed the 35% cap until the user widens or unpins.
 
@@ -101,7 +104,8 @@ Add a new section to the existing Preferences modal: **"Pinned buttons"**, benea
 
 - Lists every toolbar button by label and SF-Symbol icon.
 - Each row: 3-state segmented control — **None** / **Pin to start** / **Pin to end**.
-- When `toolbarRows == "double"`, each row also shows a row selector (Row 1 / Row 2) that activates only if pin state is non-None.
+- When `toolbarRows > 1`, each row also shows a row selector with one option per existing row (e.g. "Row 1 / Row 2 / Row 3" when `toolbarRows = 3`). The selector is enabled only if pin state is non-None.
+- The existing "Two-row toolbar" toggle is replaced with a **row-count stepper** (1–4) labeled "Toolbar rows."
 - Refused changes (capacity rule) show an inline note next to the offending row.
 
 The list scrolls; the panel itself is the existing modal.
@@ -127,26 +131,39 @@ Drag is gated behind an explicit "Edit toolbar" mode to avoid conflict with the 
 
 Long-press on any toolbar button still triggers the accessibility-announcer label / iOS 16+ tooltip exactly as today. No mode collision.
 
-## 6. Two-row mode migrations
+## 6. Multi-row mode migrations
 
-### 6.0 Terminology — `toolbarRows` vs static-zone stacking
+### 6.0 The `toolbarRows` preference
 
-These are orthogonal:
+`toolbarRows` is generalized from the existing two-value enum (`single | double`) to an **integer in the range 1–4**. It controls the **scrolling region only** — how many horizontally-scrolling strips the canonical `items()` button list is split across.
 
-- **`toolbarRows: single | double`** is a user preference that controls the **scrolling region only** — whether the canonical `items()` button list renders in one horizontally-scrolling row or splits across two. Today's two values are kept; no `multi` value is added (the scrolling region scrolls, so you never need more than two such rows).
-- **Static-zone stacking (§4.4)** is automatic and only triggers when *pinned* buttons overflow a single sub-row's 35% width cap. It can grow either zone vertically into 2, 3, or more sub-rows independently of `toolbarRows`.
+- `1` (default) — single scrolling row. (Equivalent to today's `single`.)
+- `2` — split into two scrolling rows. (Equivalent to today's `double`.)
+- `3`, `4` — split into three or four scrolling rows.
 
-A user in `single` mode with 12 buttons pinned to start may see a toolbar that is visually 3 sub-rows tall on its left side, with a single scrolling row in the middle. That is correct behavior, not a `toolbarRows` change.
+Cap of 4 is a product decision: beyond that the toolbar consumes too much vertical space relative to the editor. Not a technical limit.
 
-### 6.1 Migrations between `single` and `double`
+**Static-zone stacking (§4.4) is orthogonal.** Stacking is automatic, triggers only on pinned-button overflow, and can produce 2-, 3-, or N-tall sub-row columns inside a static zone independently of `toolbarRows`. A user with `toolbarRows = 1` and 12 buttons pinned to start may see a toolbar that is visually 3 sub-rows tall on its left edge, with a single scrolling row in the middle. That is correct behavior, not a `toolbarRows` change.
 
-Migrating a non-empty pin map between `toolbarRows` modes:
+### 6.1 Migrations of the persisted value
 
-**`double → single`.** For each pinned button currently on row 2, **collapse it to the same side of row 1**, appended after row 1's existing pins on that side. With stacking, this rarely overflows. If even with stacking it would violate the §4.4 hard backstop (scrolling middle below 80 pt), the surplus row-2 pins are **demoted to None** (i.e. unpinned, falling back into the scrolling region in canonical order). A one-shot info banner in the Preferences modal tells the user: "*N pinned buttons couldn't fit when switching to one row and were unpinned.*"
+Existing users have `toolbarRows` persisted as `"single"` or `"double"` strings (Swift `UserDefaults`, RN `AsyncStorage`). On first read after the upgrade, both runtimes coerce:
 
-**`single → double`.** All pins remain on row 1. Row 2 starts empty. The user can re-pin to row 2 via the settings panel or by entering edit mode and dragging.
+- `"single"` → `1`
+- `"double"` → `2`
+- anything else (missing / corrupt) → `1`
 
-Rationale: this matches user intent ("I had them pinned where they were"); making the system *spread* pins across rows would surprise the user and require a heuristic the user didn't ask for.
+The new persisted value is an integer string (`"1"`–`"4"`). The legacy strings are recognized for backward compatibility on read but not written.
+
+### 6.2 Migrations between row counts (N → M)
+
+When a user changes `toolbarRows` from N to M with a non-empty pin map:
+
+**Increasing rows (N < M).** All pins remain on their existing rows. The new rows (M − N of them) start empty. Users add pins to the new rows via the settings panel or drag.
+
+**Decreasing rows (N > M).** For each pinned button on a row that no longer exists (rows M+1 through N), **collapse it to the same side of the highest still-existing row**, appended after that row's existing pins on that side, in pin order. With stacking, this rarely overflows. If even with stacking the §4.4 hard backstop (scrolling middle below 80 pt on row M) would be violated, surplus pins are **demoted to None** (unpinned, falling back into the scrolling region in canonical order). A one-shot info banner in the Preferences modal tells the user: "*N pinned buttons couldn't fit when reducing the toolbar to M rows and were unpinned.*"
+
+Rationale: this matches user intent ("I had them pinned where they were"); making the system *spread* pins across rows on increase would surprise the user and require a heuristic they didn't ask for.
 
 ## 7. Visual treatment
 
@@ -154,7 +171,7 @@ Rationale: this matches user intent ("I had them pinned where they were"); makin
 
 - **No visual separator** between the static zones and the scrolling region in normal mode. Existing inter-group separators inside `items()` continue to handle visual grouping naturally.
 - **No background tint** on the static zones in normal mode. They look like the rest of the toolbar.
-- **Stacking sub-rows** within a static zone use the same vertical button spacing as 2-row toolbar mode (no extra divider line between sub-rows; they're just buttons stacked tightly).
+- **Stacking sub-rows** within a static zone use the same vertical button spacing as multi-row toolbar mode (no extra divider line between sub-rows; they're just buttons stacked tightly).
 - **Edit mode only:** the static zones get a faint background highlight (`palette.border` at ~20% alpha) so users know where to drop. This highlight disappears when edit mode exits.
 
 ## 8. Persistence
@@ -201,15 +218,20 @@ setToolbarPins: (next: ToolbarPins) => void;
 
 If the persisted JSON references a button ID that no longer exists in `items()`, **silently drop it on read.** No errors, no banners.
 
+### 8.4 `toolbarRows` widening
+
+The existing `toolbarRows` storage (Swift `keyToolbarRows`, RN `ROWS_KEY`) is repurposed from `"single" | "double"` strings to integer-as-string `"1"`–`"4"`. On read, both runtimes coerce legacy values per §6.1. The Swift `ToolbarRows` enum is replaced with a `struct ToolbarRows { let value: Int }` (validated 1–4) or simply `Int` exposed via a clamping accessor — implementation detail; the type touchpoints in callers (`prefs.toolbarRows`, the `MobileMore` menu's checked state, etc.) need updating in lockstep. The RN `ToolbarRows` TS type becomes `1 | 2 | 3 | 4`.
+
 ## 9. Implementation phases
 
 ### Phase 0 — Shared groundwork
 
+- **Widen `toolbarRows` to 1–4 (§8.4).** Update Swift `ToolbarRows` and RN `ToolbarRows` types, replace the "Two-row toolbar" toggle in the prefs modal with a 1–4 stepper, ensure legacy `"single" | "double"` values still load. All existing call sites that compared `toolbarRows == .double` / `=== "double"` get a sweep — most should become `> 1`. Verify the existing 2-row layout still renders identically when `toolbarRows = 2`.
 - Add `ToolbarPins` types in both runtimes (`Models/ToolbarPins.swift` for Swift; `lib/toolbarPins.ts` shared type for RN if a shared lib exists, otherwise inline in `ThemeContext.tsx`).
 - Add the persistence prefs as in §8.
 - Add the `tb-edit` button to the canonical `items()` lists in both renderers — initial action is a no-op so the visual alignment is in place.
 
-**Verification:** prefs round-trip a fixed pin map across an app relaunch in both runtimes.
+**Verification:** prefs round-trip a fixed pin map and a `toolbarRows` value of 3 across an app relaunch in both runtimes. Legacy `"double"` strings on disk load as `2` without loss.
 
 ### Phase 1 — Render the static zones (settings-driven)
 
@@ -219,9 +241,9 @@ If the persisted JSON references a button ID that no longer exists in `items()`,
 - No inter-zone separators (see §7).
 - Add the **settings panel** UI in §5.1 (no drag yet). User can pin/unpin via the panel and watch the toolbar update live.
 - Implement the capacity rule (§4.4) for settings-driven changes — including the stacking trigger and the hard backstop.
-- Implement the 1↔2-row migration (§6).
+- Implement the N → M row-count migrations (§6).
 
-**Verification:** in both runtimes, a user can pin/unpin via settings and pinned buttons stay visible while the scrolling region scrolls. Capacity refusals show the inline note. Switching `toolbarRows` preserves intent per §6.
+**Verification:** in both runtimes, a user can pin/unpin via settings and pinned buttons stay visible while the scrolling region scrolls. Capacity refusals show the inline note. Switching `toolbarRows` between 1, 2, 3, and 4 preserves intent per §6 (no pin loss when increasing; documented surplus-demotion when decreasing).
 
 ### Phase 2 — Edit mode + drag-and-drop
 
@@ -250,7 +272,7 @@ If the persisted JSON references a button ID that no longer exists in `items()`,
 
 - **Unit (both runtimes):** pin spec encode/decode round-trip; render-rule splits `items()` correctly for an empty pin map, all-start, all-end, mixed, and 2-row variants; stacking math (given toolbar width W, label state L, pin list P, expected sub-row count); hard-backstop refusal logic.
 - **Integration (Swift):** UI smoke test in CI that toggles a pin via the settings API and asserts the button's superview is the start-zone container, not the scroll view.
-- **Manual (both):** drag a button, drop in start, scroll the middle, confirm pinned button stays visible. Pin enough buttons that the static zone stacks to a second sub-row; confirm scrolling middle stays single-row and remains usable. Drag to refuse-capacity zone (only reachable when both zones are at width cap and middle is at 80 pt floor), confirm haptic + bounce-back. Switch 2→1 row mode with row-2 pins, confirm collapse + banner. Resize/rotate with stacking present; confirm sub-row count adapts and no pin is lost.
+- **Manual (both):** drag a button, drop in start, scroll the middle, confirm pinned button stays visible. Pin enough buttons that the static zone stacks to a second sub-row; confirm scrolling middle stays single-row and remains usable. Drag to refuse-capacity zone (only reachable when both zones are at width cap and middle is at 80 pt floor), confirm haptic + bounce-back. Switch from 3-row to 1-row mode with row-2 and row-3 pins, confirm collapse + banner. Resize/rotate with stacking present; confirm sub-row count adapts and no pin is lost. Confirm legacy `toolbarRows = "double"` from a pre-upgrade install loads as `2` and renders identically to before.
 
 ---
 
