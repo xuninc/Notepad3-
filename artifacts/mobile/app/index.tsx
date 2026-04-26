@@ -594,6 +594,16 @@ export default function NotepadScreen() {
   const mouseTargetsRef = useRef<Map<string, MouseRect>>(new Map());
   const topCompareRef = useRef<ScrollView>(null);
   const bottomCompareRef = useRef<ScrollView>(null);
+  const editorRef = useRef<TextInput>(null);
+
+  // Programmatic body mutation: sync the native TextInput (so iOS UITextView's
+  // own undo stack stays consistent) AND update React state (so derived values
+  // like stats, find-results, compare keep working). User-driven keystrokes
+  // skip setNativeProps — the native input already has the new text.
+  const setBody = (newBody: string) => {
+    editorRef.current?.setNativeProps({ text: newBody });
+    updateActiveNote({ body: newBody });
+  };
   const syncingRef = useRef(false);
   const stats = getStats(activeNote.body);
   const cursor = getCursorPosition(activeNote.body, selection.start);
@@ -643,7 +653,7 @@ export default function NotepadScreen() {
   };
 
   const insertTextAtSelection = (value: string) => {
-    updateActiveNote({ body: `${activeNote.body.slice(0, selection.start)}${value}${activeNote.body.slice(selection.end)}` });
+    setBody(`${activeNote.body.slice(0, selection.start)}${value}${activeNote.body.slice(selection.end)}`);
     const nextIndex = selection.start + value.length;
     setSelection({ start: nextIndex, end: nextIndex });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -683,7 +693,7 @@ export default function NotepadScreen() {
     if (!findQuery) return;
     const re = buildFindRegex(true);
     if (!re) return;
-    updateActiveNote({ body: activeNote.body.replace(re, replaceText) });
+    setBody(activeNote.body.replace(re, replaceText));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -700,7 +710,7 @@ export default function NotepadScreen() {
     if (!match) return;
     const before = activeNote.body.slice(0, match.index);
     const after = activeNote.body.slice(match.index + match[0].length);
-    updateActiveNote({ body: `${before}${replaceText}${after}` });
+    setBody(`${before}${replaceText}${after}`);
     const next = match.index + replaceText.length;
     setSelection({ start: next, end: next });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -790,7 +800,7 @@ export default function NotepadScreen() {
     const text = activeNote.body.slice(selection.start, selection.end);
     try {
       await Clipboard.setStringAsync(text);
-      updateActiveNote({ body: `${activeNote.body.slice(0, selection.start)}${activeNote.body.slice(selection.end)}` });
+      setBody(`${activeNote.body.slice(0, selection.start)}${activeNote.body.slice(selection.end)}`);
       setSelection({ start: selection.start, end: selection.start });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
@@ -812,24 +822,24 @@ export default function NotepadScreen() {
   const duplicateCurrentLine = () => {
     const range = getLineRange(activeNote.body, selection.start);
     const line = activeNote.body.slice(range.start, range.end);
-    updateActiveNote({ body: `${activeNote.body.slice(0, range.end)}\n${line}${activeNote.body.slice(range.end)}` });
+    setBody(`${activeNote.body.slice(0, range.end)}\n${line}${activeNote.body.slice(range.end)}`);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const deleteCurrentLine = () => {
     const range = getLineRange(activeNote.body, selection.start);
     const removeEnd = activeNote.body[range.end] === "\n" ? range.end + 1 : range.end;
-    updateActiveNote({ body: `${activeNote.body.slice(0, range.start)}${activeNote.body.slice(removeEnd)}` });
+    setBody(`${activeNote.body.slice(0, range.start)}${activeNote.body.slice(removeEnd)}`);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   };
 
   const sortLines = () => {
-    updateActiveNote({ body: activeNote.body.split("\n").sort((a, b) => a.localeCompare(b)).join("\n") });
+    setBody(activeNote.body.split("\n").sort((a, b) => a.localeCompare(b)).join("\n"));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const trimTrailingSpaces = () => {
-    updateActiveNote({ body: activeNote.body.split("\n").map((line) => line.replace(/[ \t]+$/g, "")).join("\n") });
+    setBody(activeNote.body.split("\n").map((line) => line.replace(/[ \t]+$/g, "")).join("\n"));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -879,6 +889,7 @@ export default function NotepadScreen() {
   const handleUndo = () => {
     const next = undo();
     if (next === null) return;
+    editorRef.current?.setNativeProps({ text: next });
     const at = Math.min(selection.start, next.length);
     setSelection({ start: at, end: at });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -887,6 +898,7 @@ export default function NotepadScreen() {
   const handleRedo = () => {
     const next = redo();
     if (next === null) return;
+    editorRef.current?.setNativeProps({ text: next });
     const at = Math.min(selection.start, next.length);
     setSelection({ start: at, end: at });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1231,12 +1243,33 @@ export default function NotepadScreen() {
             ) : (
               <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={styles.editorRow}>
-                  {!isMobile ? (
-                    <ErrorBoundary section="classic-gutter" FallbackComponent={SectionFallback}>
-                      <EditorGutter lineCount={stats.lines} />
-                    </ErrorBoundary>
-                  ) : null}
-                  <TextInput editable={!readMode} value={activeNote.body} onChangeText={(body) => updateActiveNote({ body })} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} spellCheck={false} style={[styles.editorInput, { color: colors.foreground }, isMobile ? { fontSize: 16, lineHeight: 24 } : null]} placeholder="Start typing..." placeholderTextColor={colors.mutedForeground} selection={selection} onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)} testID="editor-input" />
+{!isMobile ? (
+    <ErrorBoundary section="classic-gutter"
+  FallbackComponent={SectionFallback}>
+      <EditorGutter lineCount={stats.lines} />
+    </ErrorBoundary>
+  ) : null}
+  <TextInput
+    ref={editorRef}
+    key={activeNote.id}
+    editable={!readMode}
+    defaultValue={activeNote.body}
+    onChangeText={(body) => updateActiveNote({ body })}
+    multiline
+    textAlignVertical="top"
+    autoCapitalize="none"
+    autoCorrect={false}
+    spellCheck={false}
+    style={[styles.editorInput, { color: colors.foreground }, isMobile ? {
+  fontSize: 16, lineHeight: 24 } : null]}
+    placeholder="Start typing..."
+    placeholderTextColor={colors.mutedForeground}
+    selection={selection}
+    onSelectionChange={(event:
+  NativeSyntheticEvent<TextInputSelectionChangeEventData>) =>
+  setSelection(event.nativeEvent.selection)}
+    testID="editor-input"
+  />
                 </View>
                 <SyntaxPreview note={activeNote} />
               </ScrollView>
