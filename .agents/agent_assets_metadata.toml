@@ -1,8 +1,0 @@
-uploads = []
-outputs = []
-
-[[generated]]
-id = "Ww9YI_6Z9Xgm1z4qKoleG"
-uri = "file://artifacts/mobile/assets/images/icon.png"
-type = "image"
-title = "PocketPad app icon"
