@@ -56,6 +56,16 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
     private var toolbarOpen = true
 
+    // Selection-extension state for the keyboard accessory's Shift toggle.
+    // When `shiftAnchor` is non-nil, arrow taps extend the selection from
+    // the anchor instead of moving the caret. Any user-driven selection
+    // change (tap-to-position, drag-select, programmatic select-word/line,
+    // cut/paste) clears the anchor — see textViewDidChangeSelection.
+    private var shiftAnchor: Int?
+    // Set true around the moveCursor selectedRange assignment so the
+    // delegate doesn't treat our own change as a user-driven cancel.
+    private var programmaticSelectionChange = false
+
     // Observer tokens
     private var notesToken: UUID?
     private var themeToken: UUID?
@@ -364,6 +374,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         accessory.onSelectLine = { [weak self] in self?.selectLine() }
         accessory.onSelectAll = { [weak self] in self?.selectAll(nil) }
         accessory.onArrow = { [weak self] dir in self?.moveCursor(direction: dir) }
+        accessory.onShiftToggle = { [weak self] in self?.toggleShift() }
         accessory.onFind = { [weak self] in self?.toggleFind() }
         accessory.onReplace = { [weak self] in self?.toggleFind(showReplace: true) }
         accessory.onInsertDate = { [weak self] in self?.insertText(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)) }
@@ -792,6 +803,14 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {
+        // Any selection change not driven by our shift-arrow extension
+        // abandons the anchor — matches hardware-keyboard shift, where
+        // clicking elsewhere or running an explicit selection command ends
+        // the in-progress range.
+        if shiftAnchor != nil && !programmaticSelectionChange {
+            shiftAnchor = nil
+            keyboardAccessory.shiftActive = false
+        }
         keyboardAccessory.hasSelection = textView.selectedRange.length > 0
         refreshStatusBar()
     }
@@ -1024,19 +1043,46 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         textView.selectedRange = NSRange(location: s, length: e - s)
     }
 
+    private func toggleShift() {
+        if shiftAnchor == nil {
+            shiftAnchor = textView.selectedRange.location
+            keyboardAccessory.shiftActive = true
+        } else {
+            shiftAnchor = nil
+            keyboardAccessory.shiftActive = false
+        }
+    }
+
     private func moveCursor(direction: KeyboardAccessoryView.Arrow) {
         let ns = (textView.text ?? "") as NSString
-        let caret = textView.selectedRange.location
-        switch direction {
-        case .left:
-            textView.selectedRange = NSRange(location: max(0, caret - 1), length: 0)
-        case .right:
-            textView.selectedRange = NSRange(location: min(ns.length, caret + 1), length: 0)
-        case .up:
-            textView.selectedRange = NSRange(location: caretVerticallyMoved(in: ns, from: caret, direction: -1), length: 0)
-        case .down:
-            textView.selectedRange = NSRange(location: caretVerticallyMoved(in: ns, from: caret, direction: 1), length: 0)
+
+        // The "moving end" of the selection: the side opposite the anchor
+        // when shift is active, or just the caret otherwise.
+        let movingEnd: Int
+        if let anchor = shiftAnchor {
+            let r = textView.selectedRange
+            movingEnd = (r.location == anchor) ? r.location + r.length : r.location
+        } else {
+            movingEnd = textView.selectedRange.location
         }
+
+        let newCaret: Int
+        switch direction {
+        case .left:  newCaret = max(0, movingEnd - 1)
+        case .right: newCaret = min(ns.length, movingEnd + 1)
+        case .up:    newCaret = caretVerticallyMoved(in: ns, from: movingEnd, direction: -1)
+        case .down:  newCaret = caretVerticallyMoved(in: ns, from: movingEnd, direction: 1)
+        }
+
+        programmaticSelectionChange = true
+        if let anchor = shiftAnchor {
+            let lo = min(anchor, newCaret)
+            let hi = max(anchor, newCaret)
+            textView.selectedRange = NSRange(location: lo, length: hi - lo)
+        } else {
+            textView.selectedRange = NSRange(location: newCaret, length: 0)
+        }
+        programmaticSelectionChange = false
     }
 
     private func caretVerticallyMoved(in ns: NSString, from caret: Int, direction: Int) -> Int {

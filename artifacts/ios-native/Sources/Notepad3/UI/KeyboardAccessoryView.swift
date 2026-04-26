@@ -41,6 +41,13 @@ final class KeyboardAccessoryView: UIView {
     var compareActive: Bool = false {
         didSet { compareButton?.isActive = compareActive; applyPaletteToButtons() }
     }
+    var shiftActive: Bool = false {
+        didSet {
+            shiftButton?.isActive = shiftActive
+            shiftButton?.setSymbol(shiftActive ? "shift.fill" : "shift")
+            applyPaletteToButtons()
+        }
+    }
 
     // MARK: - Callbacks
 
@@ -54,6 +61,7 @@ final class KeyboardAccessoryView: UIView {
     var onSelectWord: (() -> Void)?
     var onSelectLine: (() -> Void)?
     var onSelectAll: (() -> Void)?
+    var onShiftToggle: (() -> Void)?
     var onArrow: ((Arrow) -> Void)?
     var onFind: (() -> Void)?
     var onReplace: (() -> Void)?
@@ -81,6 +89,7 @@ final class KeyboardAccessoryView: UIView {
     private weak var findButton: KbButton?
     private weak var replaceButton: KbButton?
     private weak var compareButton: KbButton?
+    private weak var shiftButton: KbButton?
 
     private var allButtons: [KbButton] = []
     private var allSeparators: [UIView] = []
@@ -146,7 +155,7 @@ final class KeyboardAccessoryView: UIView {
         allButtons.removeAll()
         allSeparators.removeAll()
         readButton = nil; undoButton = nil; redoButton = nil; cutButton = nil
-        findButton = nil; replaceButton = nil; compareButton = nil
+        findButton = nil; replaceButton = nil; compareButton = nil; shiftButton = nil
 
         // Build the full ordered list of items.
         let items = makeItems()
@@ -269,6 +278,13 @@ final class KeyboardAccessoryView: UIView {
         let down  = KbHoldButton(symbol: "arrow.down")  { [weak self] in self?.onArrow?(.down) }
         let right = KbHoldButton(symbol: "arrow.right") { [weak self] in self?.onArrow?(.right) }
 
+        // Shift extends selection while arrows tick. Modeled on hardware
+        // keyboards' shift behavior. `shift.fill` when active so the change
+        // in tint+glyph is unmistakable.
+        let shift = KbButton(symbol: shiftActive ? "shift.fill" : "shift", label: "Shift") { [weak self] in self?.onShiftToggle?() }
+        shift.isActive = shiftActive
+        shiftButton = shift
+
         let find = KbButton(symbol: "magnifyingglass", label: "Find") { [weak self] in self?.onFind?() }
         find.isActive = findActive
         findButton = find
@@ -283,18 +299,24 @@ final class KeyboardAccessoryView: UIView {
         compareButton = compare
         let more = KbButton(symbol: "ellipsis", label: "More") { [weak self] in self?.onMore?() }
 
+        // Front cluster: Hide, arrows, Shift, Cut/Copy/Paste, Word/Line/All,
+        // Undo/Redo. Trailing cluster: Read, Find/Replace, Date/Open/Compare/
+        // More. The front cluster is what users reach for during active text
+        // navigation; the trailing items are mode/file/auxiliary.
         return [
-            .button(hide), .button(read),
+            .button(hide),
             .separator,
-            .button(undo), .button(redo),
+            .button(left), .button(up), .button(down), .button(right),
+            .separator,
+            .button(shift),
             .separator,
             .button(cut), .button(copy), .button(paste),
             .separator,
             .button(word), .button(line), .button(all),
             .separator,
-            .button(left), .button(up), .button(down), .button(right),
+            .button(undo), .button(redo),
             .separator,
-            .button(find), .button(replace),
+            .button(read), .button(find), .button(replace),
             .separator,
             .button(date), .button(open), .button(compare), .button(more),
         ]
