@@ -69,13 +69,11 @@ Stable IDs already exist in both runtimes (`tb-new`, `tb-open`, `tb-save`, …, 
 
 Per row, in this left-to-right order:
 
-1. **Start zone:** all pinned buttons whose `(side, row)` is `(start, thisRow)`, in **pin order** (see §4.3).
-2. **Vertical separator** (if start zone is non-empty *and* the scrolling region has any buttons).
-3. **Scrolling region:** every other button for this row (in canonical `items()` order, with separators), inside the existing horizontal scroll view.
-4. **Vertical separator** (if end zone is non-empty *and* the scrolling region has any buttons).
-5. **End zone:** all pinned buttons whose `(side, row)` is `(end, thisRow)`, in **pin order**.
+1. **Start zone container:** all pinned buttons whose `(side, row)` is `(start, thisRow)`, in **pin order** (see §4.3), laid out in sub-rows per the stacking rule (§4.4).
+2. **Scrolling region:** every other button for this row (in canonical `items()` order, with their existing inter-group separators preserved), inside the existing horizontal scroll view.
+3. **End zone container:** all pinned buttons whose `(side, row)` is `(end, thisRow)`, in **pin order**, sub-rows stacked the same way.
 
-Separators between groups inside the canonical `items()` are preserved in the scrolling region; pinned buttons drop their adjacent separators.
+No additional vertical separators between zones (see §7 — seamless visual). Inter-group separators *inside* the canonical `items()` are preserved within the scrolling region; a pinned button drops the separators that were adjacent to it in `items()`.
 
 ### 4.3 Pin order
 
@@ -87,11 +85,13 @@ Reorder within a zone is **out of scope** for v1 — users who want a different 
 
 ### 4.4 Capacity rule
 
-No hard cap on pinned button count. Instead: **the scrolling region must retain a minimum visible width of 80 pt.** This applies per row.
+No hard cap on pinned button count. Static zones grow vertically — they **stack into sub-rows** when one sub-row fills up. The scrolling middle stays a single row regardless.
 
-- A drag-and-drop drop that would push the scrolling region below 80 pt is **refused** with a brief error haptic (Swift: `Haptics.error()` from `UI/Haptics.swift`; RN: `Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)` from `expo-haptics`).
-- A settings-panel toggle that would do the same is also refused, with an inline error row in the panel ("Not enough room — unpin one first").
-- The 80 pt threshold is computed against the row's available width minus the start zone, end zone, and the two separators. Re-evaluated on rotation / resize.
+- **Stacking trigger:** each static-zone sub-row caps at **35% of the toolbar's visible width** (computed at layout time; accounts for label visibility, so a sub-row holds fewer buttons when labels are on). When a new pin would exceed this width on the current sub-row, it starts a new sub-row immediately beneath. Pinned buttons fill from the outer edge inward, then stack downward.
+- **Row height grows** to fit the tallest column among `(left static zone, scrolling middle, right static zone)`. The scrolling middle remains a single row of buttons; its buttons stay vertically centered in the now-taller row container.
+- **2-row toolbar mode:** each toolbar row stacks independently — row 1's static zones can grow vertically within row 1, and row 2's likewise within row 2. The total toolbar height = sum of each row's expanded height + inter-row rule.
+- **Hard backstop — min 80 pt scrolling middle.** Even with stacking, the scrolling region must retain at least 80 pt of horizontal width. A pin that would still violate this after stacking (i.e. both static zones are already at their 35% width-per-sub-row caps and the scrolling middle is at 80 pt) is **refused** with an error haptic (Swift: `Haptics.error()` from `UI/Haptics.swift`; RN: `Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)` from `expo-haptics`). Settings-panel refusals show an inline note next to the offending row ("Not enough room — unpin one first").
+- **Resize / rotation:** thresholds re-evaluated; sub-row counts may grow or shrink as available width changes. **Pins are never auto-unpinned** by a resize — if shrinking the window makes the layout impossible, the scrolling middle holds its 80 pt floor and the static zones may temporarily exceed the 35% cap until the user widens or unpins.
 
 ## 5. UX
 
@@ -145,9 +145,12 @@ Rationale: this matches user intent ("I had them pinned where they were"); makin
 
 ## 7. Visual treatment
 
-- **Single thin vertical separator** (1px / `1 / UIScreen.main.scale` on iOS) between each non-empty static zone and the scrolling region. Color: `palette.border` (same color as the existing inter-group separators).
+**Goal: seamless.** Pinned buttons must be visually indistinguishable from scrolling buttons until the user actually scrolls. Same chrome gradient, same height per sub-row, same button styling, same spacing.
+
+- **No visual separator** between the static zones and the scrolling region in normal mode. Existing inter-group separators inside `items()` continue to handle visual grouping naturally.
 - **No background tint** on the static zones in normal mode. They look like the rest of the toolbar.
-- In edit mode only: the static zones get a faint background highlight (`palette.border` at ~20% alpha) so users know where to drop. This highlight disappears when edit mode exits.
+- **Stacking sub-rows** within a static zone use the same vertical button spacing as 2-row toolbar mode (no extra divider line between sub-rows; they're just buttons stacked tightly).
+- **Edit mode only:** the static zones get a faint background highlight (`palette.border` at ~20% alpha) so users know where to drop. This highlight disappears when edit mode exits.
 
 ## 8. Persistence
 
@@ -205,11 +208,12 @@ If the persisted JSON references a button ID that no longer exists in `items()`,
 
 ### Phase 1 — Render the static zones (settings-driven)
 
-- Modify the Swift `ClassicToolbar.rebuild()` to split `items()` per row into `(start zone, scrolling region, end zone)` based on `Preferences.shared.toolbarPins`.
-- Mirror the same split in the RN render block around line 1000 of `app/index.tsx`. Each row becomes three `<View>`s: start zone, scrolling `<ScrollView horizontal>`, end zone.
-- Add the inter-zone vertical separators per §7.
+- Modify the Swift `ClassicToolbar.rebuild()` to split `items()` per row into `(start zone container, scrolling region, end zone container)` based on `Preferences.shared.toolbarPins`. Each static-zone container holds a vertical stack of horizontal sub-rows; new sub-rows appear when the stacking rule (§4.4) triggers.
+- Mirror the same split in the RN render block around line 1000 of `app/index.tsx`. Each toolbar row becomes three siblings: start-zone `<View>` (column-flexed for sub-rows), scrolling `<ScrollView horizontal>`, end-zone `<View>` (column-flexed for sub-rows).
+- The toolbar row container uses `alignItems: stretch` so the three columns share the same height; the scrolling middle vertically-centers its single row of buttons inside that height. Swift uses equivalent UIStackView `.fill` distribution.
+- No inter-zone separators (see §7).
 - Add the **settings panel** UI in §5.1 (no drag yet). User can pin/unpin via the panel and watch the toolbar update live.
-- Implement the capacity rule (§4.4) for settings-driven changes.
+- Implement the capacity rule (§4.4) for settings-driven changes — including the stacking trigger and the hard backstop.
 - Implement the 1↔2-row migration (§6).
 
 **Verification:** in both runtimes, a user can pin/unpin via settings and pinned buttons stay visible while the scrolling region scrolls. Capacity refusals show the inline note. Switching `toolbarRows` preserves intent per §6.
@@ -239,9 +243,9 @@ If the persisted JSON references a button ID that no longer exists in `items()`,
 
 ## 11. Test plan
 
-- **Unit (both runtimes):** pin spec encode/decode round-trip; render-rule splits `items()` correctly for an empty pin map, all-start, all-end, mixed, and 2-row variants; capacity refusal logic.
+- **Unit (both runtimes):** pin spec encode/decode round-trip; render-rule splits `items()` correctly for an empty pin map, all-start, all-end, mixed, and 2-row variants; stacking math (given toolbar width W, label state L, pin list P, expected sub-row count); hard-backstop refusal logic.
 - **Integration (Swift):** UI smoke test in CI that toggles a pin via the settings API and asserts the button's superview is the start-zone container, not the scroll view.
-- **Manual (both):** drag a button, drop in start, scroll the middle, confirm pinned button stays visible. Drag to refuse-capacity zone, confirm haptic + bounce-back. Switch 2→1 row mode with row-2 pins, confirm collapse + banner.
+- **Manual (both):** drag a button, drop in start, scroll the middle, confirm pinned button stays visible. Pin enough buttons that the static zone stacks to a second sub-row; confirm scrolling middle stays single-row and remains usable. Drag to refuse-capacity zone (only reachable when both zones are at width cap and middle is at 80 pt floor), confirm haptic + bounce-back. Switch 2→1 row mode with row-2 pins, confirm collapse + banner. Resize/rotate with stacking present; confirm sub-row count adapts and no pin is lost.
 
 ---
 
