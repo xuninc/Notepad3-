@@ -76,6 +76,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private var mobileConstraints: [NSLayoutConstraint] = []
     private var classicConstraints: [NSLayoutConstraint] = []
     private var sharedConstraints: [NSLayoutConstraint] = []
+    private var zenConstraints: [NSLayoutConstraint] = []
+    // Saved find-bar visibility so we can restore it when zen exits.
+    private var findBarVisibleBeforeZen = false
 
     // Highlighting cache (cheap short-circuit when nothing changed)
     private var lastHighlightedBody: String = ""
@@ -475,6 +478,15 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             statusBar.heightAnchor.constraint(equalToConstant: 24),
+        ]
+
+        // Zen mode: textView fills the safe area. All chrome is hidden and
+        // the mode-specific constraint set is deactivated, so the editor
+        // actually grows into the freed space instead of leaving a blank
+        // band where the chrome used to be.
+        zenConstraints = [
+            textView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            textView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ]
 
         NSLayoutConstraint.activate(sharedConstraints)
@@ -1116,15 +1128,45 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func setZenMode(_ on: Bool) {
+        guard zenMode != on else { return }
         zenMode = on
-        // Zen hides chrome; this is a quick approximation — hide tab strip, find bar, bottom bar, aero menu.
-        tabStrip.isHidden = on
-        findBar.isHidden = on
-        mobileBottomBar.isHidden = on || prefs.layoutMode != .mobile
-        aeroMenuBar.isHidden = on || prefs.layoutMode != .classic
-        classicToolbar.isHidden = on || prefs.layoutMode != .classic || !toolbarOpen
-        statusBar.isHidden = on || prefs.layoutMode != .classic
-        lineGutter.isHidden = on || prefs.layoutMode != .classic
+
+        if on {
+            // Remember whether find/replace was open so we can put it back.
+            findBarVisibleBeforeZen = (findBarHeight?.constant ?? 0) > 0
+            findBarHeight?.constant = 0
+
+            // Hide every piece of chrome — including classicTitleBar and
+            // mobileFab, which the old quick-approximation forgot — so the
+            // textView's freed space becomes editor area, not a blank band.
+            findBar.isHidden = true
+            classicTitleBar.isHidden = true
+            aeroMenuBar.isHidden = true
+            classicToolbar.isHidden = true
+            tabStrip.isHidden = true
+            statusBar.isHidden = true
+            lineGutter.isHidden = true
+            mobileBottomBar.isHidden = true
+            mobileFab.isHidden = true
+
+            // Drop the mode-specific constraint set and stretch the editor
+            // to the safe area edges via the dedicated zen set.
+            NSLayoutConstraint.deactivate(mobileConstraints)
+            NSLayoutConstraint.deactivate(classicConstraints)
+            NSLayoutConstraint.activate(zenConstraints)
+            navigationController?.setNavigationBarHidden(true, animated: true)
+        } else {
+            NSLayoutConstraint.deactivate(zenConstraints)
+            // Re-apply the layout mode the user is in (this re-shows its
+            // own chrome and re-activates its constraint set).
+            applyLayoutMode(animated: true)
+            // Find bar visibility restored to whatever it was before zen.
+            findBarHeight?.constant = findBarVisibleBeforeZen
+                ? (findBar.showsReplace ? 88 : 44)
+                : 0
+            findBar.isHidden = !findBarVisibleBeforeZen
+        }
+
         UIView.animate(withDuration: 0.22) { self.view.layoutIfNeeded() }
     }
 
