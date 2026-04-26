@@ -26,14 +26,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller";
 
 import { CUSTOM_PALETTE_KEYS, customDefaults, customPaletteLabels, CustomPaletteKey } from "@/constants/colors";
-import { detectLanguageFromFileName, NoteDocument, NoteLanguage, useNotes } from "@/context/NotesContext";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { detectLanguageFromFileName, getStarterContent, NoteDocument, NoteLanguage, setStarterContent, StarterContent, useNotes } from "@/context/NotesContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
 
 type ThemeChoiceId = "classic" | "light" | "dark" | "retro" | "modern" | "cyberpunk" | "sunset" | "custom" | "system";
 type ThemeChoice = { id: ThemeChoiceId; label: string; hint: string };
 const themeChoices: ThemeChoice[] = [
-  { id: "classic", label: "Classic", hint: "Notepad2 on Windows 7 Aero" },
+  { id: "classic", label: "Classic", hint: "Aero-era window chrome" },
   { id: "light", label: "Light", hint: "Clean and bright" },
   { id: "dark", label: "Dark", hint: "Easy on the eyes" },
   { id: "retro", label: "Retro", hint: "Windows 95 chrome" },
@@ -77,6 +78,10 @@ const codeKeywords = new Set(
 );
 
 const MouseContext = createContext<MouseRegistry>({ enabled: false, set: () => {}, remove: () => {} });
+
+function SectionFallback() {
+  return null;
+}
 
 function MTarget({ id, onPress, children }: { id: string; onPress: () => void; children: React.ReactNode }) {
   const reg = useContext(MouseContext);
@@ -540,7 +545,7 @@ function SyntaxPreview({ note }: { note: NoteDocument }) {
 export default function NotepadScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, accessoryRows, setAccessoryRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
+  const { themeName, preference, setPreference, tabsLayout, setTabsLayout, toolbarLabels, setToolbarLabels, toolbarRows, setToolbarRows, layoutMode, setLayoutMode, accessoryRows, setAccessoryRows, customPalette, setCustomColor, resetCustomPalette, palette, radius } = useTheme();
   const isMobile = layoutMode === "mobile";
   const [toolbarTip, setToolbarTip] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -582,6 +587,10 @@ export default function NotepadScreen() {
   const [gotoValue, setGotoValue] = useState("");
   const [langOpen, setLangOpen] = useState(false);
   const [mouseOn, setMouseOn] = useState(false);
+  const [starterContent, setStarterContentState] = useState<StarterContent>("welcome");
+  useEffect(() => {
+    getStarterContent().then(setStarterContentState).catch(() => undefined);
+  }, []);
   const mouseTargetsRef = useRef<Map<string, MouseRect>>(new Map());
   const topCompareRef = useRef<ScrollView>(null);
   const bottomCompareRef = useRef<ScrollView>(null);
@@ -724,6 +733,18 @@ export default function NotepadScreen() {
 
   const selectAll = () => {
     setSelection({ start: 0, end: activeNote.body.length });
+    Haptics.selectionAsync();
+  };
+
+  const selectWord = () => {
+    const body = activeNote.body;
+    const at = Math.min(selection.start, body.length);
+    let start = at;
+    let end = at;
+    while (start > 0 && /[\w'-]/.test(body[start - 1])) start--;
+    while (end < body.length && /[\w'-]/.test(body[end])) end++;
+    if (start === end) return;
+    setSelection({ start, end });
     Haptics.selectionAsync();
   };
 
@@ -902,32 +923,47 @@ export default function NotepadScreen() {
               <LinearGradient colors={palette.titleGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
               <Ionicons name="document-text-outline" size={13} color={colors.primaryForeground} />
               <Text numberOfLines={1} style={[styles.titleBarText, { color: colors.primaryForeground }]}>{activeNote.title} - Notepad 3++</Text>
+              {isMobile ? (
+                <Pressable
+                  onPress={() => setPreference(themeName === "dark" ? "light" : "dark")}
+                  onLongPress={() => setPrefsOpen(true)}
+                  delayLongPress={350}
+                  style={styles.titleBarMore}
+                  testID="title-theme-toggle"
+                  hitSlop={10}
+                  accessibilityLabel={themeName === "dark" ? "Switch to light theme (long-press for all themes)" : "Switch to dark theme (long-press for all themes)"}
+                >
+                  <Feather name={themeName === "dark" ? "sun" : "moon"} size={16} color={colors.primaryForeground} />
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
           {!zenMode && !isMobile ? (
-            <View
-              style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
-              onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
-            >
-              <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-              {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
-                <MTarget key={id} id={`menu-${id}`} onPress={() => setOpenMenu((current) => (current === id ? null : id))}>
-                  <Pressable
-                    onPress={() => setOpenMenu((current) => (current === id ? null : id))}
-                    onLayout={(e) => setMenuItemLeft((prev) => (prev[id] === e.nativeEvent.layout.x ? prev : { ...prev, [id]: e.nativeEvent.layout.x }))}
-                    style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]}
-                    testID={`menu-${id}`}
-                  >
-                    <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
-                  </Pressable>
-                </MTarget>
-              ))}
-            </View>
+            <ErrorBoundary section="classic-menubar" FallbackComponent={SectionFallback}>
+              <View
+                style={[styles.menuBar, { borderColor: colors.border, overflow: "hidden" }]}
+                onLayout={(e) => setMenuBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+              >
+                <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                {(["file", "edit", "view", "tools", "help"] as const).map((id) => (
+                  <MTarget key={id} id={`menu-${id}`} onPress={() => setOpenMenu((current) => (current === id ? null : id))}>
+                    <Pressable
+                      onPress={() => setOpenMenu((current) => (current === id ? null : id))}
+                      onLayout={(e) => setMenuItemLeft((prev) => (prev[id] === e.nativeEvent.layout.x ? prev : { ...prev, [id]: e.nativeEvent.layout.x }))}
+                      style={({ pressed }) => [styles.menuItem, { backgroundColor: openMenu === id ? colors.primary : pressed ? colors.secondary : "transparent" }]}
+                      testID={`menu-${id}`}
+                    >
+                      <Text style={[styles.menuItemText, { color: openMenu === id ? colors.primaryForeground : colors.foreground }]}>{id[0].toUpperCase() + id.slice(1)}</Text>
+                    </Pressable>
+                  </MTarget>
+                ))}
+              </View>
+            </ErrorBoundary>
           ) : null}
 
           {openMenu && !isMobile ? (
-            <>
+            <ErrorBoundary section="classic-dropdown" FallbackComponent={SectionFallback}>
               <Pressable onPress={() => setOpenMenu(null)} style={[styles.menuOverlay, { top: menuBarBottom }]} />
               <View style={[styles.menuDropdown, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: radius, left: menuItemLeft[openMenu] ?? 0, top: menuBarBottom + 2 }]}>
                 {openMenu === "file" ? (
@@ -1006,10 +1042,12 @@ export default function NotepadScreen() {
                   </>
                 ) : null}
               </View>
-            </>
+            </ErrorBoundary>
           ) : null}
 
-          {!zenMode && toolbarOpen && !isMobile ? (() => {
+          {!zenMode && toolbarOpen && !isMobile ? (
+            <ErrorBoundary section="classic-toolbar" FallbackComponent={SectionFallback}>
+              {(() => {
             type TbItem = { kind: "btn"; id: string; icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; color: string } | { kind: "sep" };
             const items: TbItem[] = [
               { kind: "btn", id: "tb-new", icon: "file-plus", label: "New", onPress: createNote, color: colors.foreground },
@@ -1075,16 +1113,20 @@ export default function NotepadScreen() {
                 <IconButton id="tb-collapse" icon="chevron-up" color={colors.foreground} onPress={() => setToolbarOpen(false)} label="Hide toolbar" onLongPress={showTip} />
               </View>
             );
-          })() : null}
+          })()}
+            </ErrorBoundary>
+          ) : null}
 
           {!zenMode && !toolbarOpen && !isMobile ? (
-            <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
-              <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
-              <Pressable onPress={() => setToolbarOpen(true)} style={styles.toolbarStripPress}>
-                <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
-                <Text style={[styles.toolbarStripText, { color: colors.mutedForeground }]}>Show toolbar</Text>
-              </Pressable>
-            </View>
+            <ErrorBoundary section="classic-toolbar-strip" FallbackComponent={SectionFallback}>
+              <View style={[styles.toolbarStrip, { borderColor: colors.border, overflow: "hidden" }]}>
+                <LinearGradient colors={palette.chromeGradient} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+                <Pressable onPress={() => setToolbarOpen(true)} style={styles.toolbarStripPress}>
+                  <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
+                  <Text style={[styles.toolbarStripText, { color: colors.mutedForeground }]}>Show toolbar</Text>
+                </Pressable>
+              </View>
+            </ErrorBoundary>
           ) : null}
 
           {!zenMode ? (
@@ -1201,25 +1243,33 @@ export default function NotepadScreen() {
             ) : (
               <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={styles.editorRow}>
-                  {!isMobile ? <EditorGutter lineCount={stats.lines} /> : null}
-                  <TextInput
-                    ref={editorRef}
-                    key={activeNote.id}
-                    editable={!readMode}
-                    defaultValue={activeNote.body}
-                    onChangeText={(body) => updateActiveNote({ body })}
-                    multiline
-                    textAlignVertical="top"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    spellCheck={false}
-                    style={[styles.editorInput, { color: colors.foreground }, isMobile ? { fontSize: 16, lineHeight: 24 } : null]}
-                    placeholder="Start typing..."
-                    placeholderTextColor={colors.mutedForeground}
-                    selection={selection}
-                    onSelectionChange={(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection)}
-                    testID="editor-input"
-                  />
+{!isMobile ? (
+    <ErrorBoundary section="classic-gutter"
+  FallbackComponent={SectionFallback}>
+      <EditorGutter lineCount={stats.lines} />
+    </ErrorBoundary>
+  ) : null}
+  <TextInput
+    ref={editorRef}
+    key={activeNote.id}
+    editable={!readMode}
+    defaultValue={activeNote.body}
+    onChangeText={(body) => updateActiveNote({ body })}
+    multiline
+    textAlignVertical="top"
+    autoCapitalize="none"
+    autoCorrect={false}
+    spellCheck={false}
+    style={[styles.editorInput, { color: colors.foreground }, isMobile ? {
+  fontSize: 16, lineHeight: 24 } : null]}
+    placeholder="Start typing..."
+    placeholderTextColor={colors.mutedForeground}
+    selection={selection}
+    onSelectionChange={(event:
+  NativeSyntheticEvent<TextInputSelectionChangeEventData>) =>
+  setSelection(event.nativeEvent.selection)}
+    testID="editor-input"
+  />
                 </View>
                 <SyntaxPreview note={activeNote} />
               </ScrollView>
@@ -1279,7 +1329,7 @@ export default function NotepadScreen() {
           <View style={[styles.mobileBottomBar, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom || 8 }]}>
             <Pressable onPress={() => setTabListOpen(true)} style={styles.mobileBottomBtn} testID="mobile-docs" hitSlop={8}>
               <Feather name="list" size={22} color={colors.foreground} />
-              <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>Docs</Text>
+              <Text style={[styles.mobileBottomLabel, { color: colors.mutedForeground }]}>Open</Text>
             </Pressable>
             <Pressable onPress={() => { setFindOpen(!findOpen); setReplaceOpen(false); }} style={styles.mobileBottomBtn} testID="mobile-find" hitSlop={8}>
               <Feather name="search" size={22} color={findOpen ? colors.primary : colors.foreground} />
@@ -1324,6 +1374,10 @@ export default function NotepadScreen() {
             { kind: "btn", node: <KbBtn icon="clipboard" label="Copy" onPress={copySelection} colors={colors} /> },
             { kind: "btn", node: <KbBtn icon="download" label="Paste" onPress={pasteFromClipboard} colors={colors} /> },
             sep,
+            { kind: "btn", node: <KbBtn icon="type" label="Word" onPress={selectWord} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="minus" label="Line" onPress={selectLine} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="maximize" label="All" onPress={selectAll} colors={colors} /> },
+            sep,
             { kind: "btn", node: <KbHoldBtn icon="arrow-left" onTick={() => moveCursorBy(-1)} colors={colors} /> },
             { kind: "btn", node: <KbHoldBtn icon="arrow-up" onTick={() => moveCursorVertical(-1)} colors={colors} /> },
             { kind: "btn", node: <KbHoldBtn icon="arrow-down" onTick={() => moveCursorVertical(1)} colors={colors} /> },
@@ -1333,7 +1387,7 @@ export default function NotepadScreen() {
             { kind: "btn", node: <KbBtn icon="repeat" label="Replace" onPress={() => { setFindOpen(true); setReplaceOpen(true); }} active={replaceOpen} colors={colors} /> },
             sep,
             { kind: "btn", node: <KbBtn icon="clock" label="Date" onPress={() => insertTextAtSelection(new Date().toLocaleString())} colors={colors} /> },
-            { kind: "btn", node: <KbBtn icon="list" label="Docs" onPress={() => setTabListOpen(true)} colors={colors} /> },
+            { kind: "btn", node: <KbBtn icon="list" label="Open" onPress={() => setTabListOpen(true)} colors={colors} /> },
             { kind: "btn", node: <KbBtn icon="columns" label="Compare" onPress={toggleCompare} active={compareOpen} colors={colors} /> },
             { kind: "btn", node: <KbBtn icon="more-horizontal" label="More" onPress={() => setActionSheetOpen(true)} colors={colors} /> },
           ];
@@ -1594,7 +1648,7 @@ export default function NotepadScreen() {
                   </View>
                 ) : null}
                 <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Document tabs</Text>
-                {([{ id: "tabs" as const, label: "Tabs", hint: "Notepad++ style row of tabs" }, { id: "list" as const, label: "Dropdown list", hint: "One bar that opens a list of open documents" }]).map((opt) => {
+                {([{ id: "tabs" as const, label: "Tabs", hint: "Horizontal row of document tabs" }, { id: "list" as const, label: "Dropdown list", hint: "One bar that opens a list of open documents" }]).map((opt) => {
                   const selected = tabsLayout === opt.id;
                   return (
                     <Pressable key={opt.id} onPress={() => setTabsLayout(opt.id)} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID={`tabs-layout-${opt.id}`}>
@@ -1647,7 +1701,22 @@ export default function NotepadScreen() {
                     </Pressable>
                   );
                 })}
-                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Hold an arrow on the keyboard accessory to repeat. Choices are saved on this device.</Text>
+                <Text style={[styles.modalSection, { color: colors.foreground, marginTop: 12 }]}>Starter content</Text>
+                {([{ id: "welcome" as const, label: "Welcome scratchpad", hint: "Show the demo note on first launch" }, { id: "blank" as const, label: "Blank page", hint: "Start with an empty document" }]).map((opt) => {
+                  const selected = starterContent === opt.id;
+                  return (
+                    <Pressable key={opt.id} onPress={() => { setStarterContentState(opt.id); setStarterContent(opt.id); }} style={({ pressed }) => [styles.prefRow, { backgroundColor: selected ? colors.primary : pressed ? colors.secondary : "transparent", borderColor: colors.border, borderRadius: Math.min(radius, 4) }]} testID={`starter-${opt.id}`}>
+                      <View style={[styles.radio, { borderColor: selected ? colors.primaryForeground : colors.foreground }]}>
+                        {selected ? <View style={[styles.radioDot, { backgroundColor: colors.primaryForeground }]} /> : null}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.prefRowLabel, { color: selected ? colors.primaryForeground : colors.foreground }]}>{opt.label}</Text>
+                        <Text style={[styles.prefRowHint, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{opt.hint}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                <Text style={[styles.modalNote, { color: colors.mutedForeground }]}>Tip: long-press any toolbar icon to see its name. Hold an arrow on the keyboard accessory to repeat. Long-press the title-bar theme icon to open this menu. Starter content only takes effect on a fresh install.</Text>
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -1704,7 +1773,7 @@ export default function NotepadScreen() {
               </View>
               <View style={styles.modalBody}>
                 <Text style={[styles.aboutBig, { color: colors.foreground }]}>Notepad 3++</Text>
-                <Text style={[styles.aboutText, { color: colors.foreground }]}>A pocket text editor with the look of Notepad2 on Windows 7 and the tools of Notepad++.</Text>
+                <Text style={[styles.aboutText, { color: colors.foreground }]}>A pocket text editor that captures the feel of classic desktop notepad utilities.</Text>
                 <Text style={[styles.aboutText, { color: colors.mutedForeground }]}>Multi-document tabs, find/replace, top-bottom diff, file import, line tools, syntax coloring, and a simulated mouse for desktop nostalgia.</Text>
                 <Text style={[styles.aboutText, { color: colors.mutedForeground }]}>Version 1.1.0</Text>
               </View>

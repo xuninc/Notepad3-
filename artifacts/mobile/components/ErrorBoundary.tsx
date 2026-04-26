@@ -1,10 +1,12 @@
 import React, { Component, ComponentType, PropsWithChildren } from "react";
 
 import { ErrorFallback, ErrorFallbackProps } from "@/components/ErrorFallback";
+import { recordCrash } from "@/lib/crashLog";
 
 export type ErrorBoundaryProps = PropsWithChildren<{
   FallbackComponent?: ComponentType<ErrorFallbackProps>;
   onError?: (error: Error, stackTrace: string) => void;
+  section?: string;
 }>;
 
 type ErrorBoundaryState = { error: Error | null };
@@ -30,6 +32,7 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }): void {
+    recordCrash(error, info.componentStack, this.props.section).catch(() => undefined);
     if (typeof this.props.onError === "function") {
       this.props.onError(error, info.componentStack);
     }
