@@ -108,11 +108,16 @@ final class AeroMenuBar: UIView {
             stack.addArrangedSubview(button)
         }
 
-        // Trailing filler keeps buttons hugged to the leading edge.
+        // Trailing filler keeps the menus hugged to the leading edge.
         let filler = UIView()
         filler.translatesAutoresizingMaskIntoConstraints = false
         filler.setContentHuggingPriority(.defaultLow, for: .horizontal)
         stack.addArrangedSubview(filler)
+
+        // Always-visible layout switcher pinned to the right edge. Glyph
+        // depicts the layout the user can jump to from here (mobile).
+        let switcher = makeLayoutSwitcherButton()
+        stack.addArrangedSubview(switcher)
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
@@ -145,6 +150,28 @@ final class AeroMenuBar: UIView {
         button.addTarget(self, action: #selector(menuButtonTapped(_:)), for: .touchUpInside)
         rowProviders[ObjectIdentifier(button)] = provider
         return button
+    }
+
+    private func makeLayoutSwitcherButton() -> UIButton {
+        var cfg = UIButton.Configuration.plain()
+        cfg.image = UIImage(
+            systemName: "iphone",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        )
+        cfg.baseForegroundColor = palette.foreground
+        cfg.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
+        let button = UIButton(type: .system)
+        button.configuration = cfg
+        button.accessibilityLabel = "Switch to mobile layout"
+        button.addTarget(self, action: #selector(layoutSwitcherTapped), for: .touchUpInside)
+        buttons.append(button) // applyPalette tracks tint for this too
+        return button
+    }
+
+    @objc private func layoutSwitcherTapped() {
+        currentPopover?.dismiss()
+        currentPopover = nil
+        onSwitchToMobileLayout?()
     }
 
     @objc private func menuButtonTapped(_ sender: UIButton) {

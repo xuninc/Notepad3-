@@ -218,6 +218,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         mobileBottomBar.onOpen = { [weak self] in Haptics.selectionChanged(); self?.presentDocsList() }
         mobileBottomBar.onFind = { [weak self] in Haptics.selectionChanged(); self?.toggleFind() }
         mobileBottomBar.onCompare = { [weak self] in Haptics.selectionChanged(); self?.presentCompare() }
+        mobileBottomBar.onSwitchToClassic = { [weak self] in Haptics.selectionChanged(); self?.prefs.layoutMode = .classic }
         mobileBottomBar.onMore = { [weak self] in Haptics.selectionChanged(); self?.presentMobileMore() }
         view.addSubview(mobileBottomBar)
 

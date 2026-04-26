@@ -12,12 +12,14 @@ final class MobileBottomBar: UIView {
     var onFind: (() -> Void)?
     var onCompare: (() -> Void)?
     var onMore: (() -> Void)?
+    var onSwitchToClassic: (() -> Void)?
 
     private let stack = UIStackView()
     private let separator = UIView()
     private let openButton: BottomButton
     private let findButton: BottomButton
     private let compareButton: BottomButton
+    private let layoutButton: BottomButton
     private let moreButton: BottomButton
 
     private var palette: Palette = .light
@@ -26,6 +28,9 @@ final class MobileBottomBar: UIView {
         openButton    = BottomButton(symbol: "folder",                title: "File")
         findButton    = BottomButton(symbol: "magnifyingglass",       title: "Find")
         compareButton = BottomButton(symbol: "rectangle.split.1x2",   title: "Compare")
+        // Layout switcher: glyph depicts the *other* layout the user can jump
+        // to. From mobile, that's the classic / desktop chrome.
+        layoutButton  = BottomButton(symbol: "macwindow",             title: "Classic")
         moreButton    = BottomButton(symbol: "ellipsis",              title: "More")
         super.init(frame: frame)
         setup()
@@ -46,12 +51,13 @@ final class MobileBottomBar: UIView {
         stack.spacing = 0
         addSubview(stack)
 
-        let buttons = [openButton, findButton, compareButton, moreButton]
+        let buttons = [openButton, findButton, compareButton, layoutButton, moreButton]
         buttons.forEach { stack.addArrangedSubview($0) }
 
         openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
         findButton.addTarget(self, action: #selector(findTapped), for: .touchUpInside)
         compareButton.addTarget(self, action: #selector(compareTapped), for: .touchUpInside)
+        layoutButton.addTarget(self, action: #selector(layoutTapped), for: .touchUpInside)
         moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
 
         NSLayoutConstraint.activate([
@@ -73,12 +79,13 @@ final class MobileBottomBar: UIView {
         palette = p
         backgroundColor = p.card
         separator.backgroundColor = p.border
-        [openButton, findButton, compareButton, moreButton].forEach { $0.applyPalette(p) }
+        [openButton, findButton, compareButton, layoutButton, moreButton].forEach { $0.applyPalette(p) }
     }
 
     @objc private func openTapped()    { onOpen?() }
     @objc private func findTapped()    { onFind?() }
     @objc private func compareTapped() { onCompare?() }
+    @objc private func layoutTapped()  { onSwitchToClassic?() }
     @objc private func moreTapped()    { onMore?() }
 }
 
