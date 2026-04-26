@@ -17,19 +17,11 @@
             "supportsTablet": false,
       "bundleIdentifier": "com.corey.ios.np3plusplus"
     },
-    "android": {
-      "package": "com.corey.android.np3plusplus"
-    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      "expo-router",
       "expo-font",
       "expo-web-browser"
     ],
