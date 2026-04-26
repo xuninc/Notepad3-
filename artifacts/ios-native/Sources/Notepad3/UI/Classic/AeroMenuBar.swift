@@ -1,12 +1,12 @@
 import UIKit
 
-/// Aero-era horizontal menu bar: File · Edit · View · Tools · Help. Each button
-/// presents a `UIMenu` of actions mirroring the RN classic layout. Business
-/// logic lives in the caller — the bar only fires closures.
+/// Aero-era horizontal menu bar: File · Edit · View · Tools · Help. Each
+/// button presents a `ClassicMenuPopover` — a Windows-classic-styled flat
+/// dropdown — instead of UIKit's stock `UIMenu`. Business logic lives in
+/// the caller; the bar only fires closures.
 ///
 /// The chrome draws a subtle vertical gradient using the active palette's
-/// `chromeGradientStart/End` pair, matching the RN `LinearGradient` behind
-/// `styles.menuBar`.
+/// `chromeGradientStart/End` pair.
 final class AeroMenuBar: UIView {
     // File
     var onNew: (() -> Void)?
@@ -62,6 +62,8 @@ final class AeroMenuBar: UIView {
     private let stack = UIStackView()
     private var palette: Palette = .classic
     private var buttons: [UIButton] = []
+    private var rowProviders: [ObjectIdentifier: () -> [ClassicMenuPopover.Row]] = [:]
+    private var currentPopover: ClassicMenuPopover?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -92,12 +94,12 @@ final class AeroMenuBar: UIView {
         separator.translatesAutoresizingMaskIntoConstraints = false
         addSubview(separator)
 
-        let specs: [(String, () -> UIMenu)] = [
-            ("File",  { [weak self] in self?.fileMenu()  ?? UIMenu() }),
-            ("Edit",  { [weak self] in self?.editMenu()  ?? UIMenu() }),
-            ("View",  { [weak self] in self?.viewMenu()  ?? UIMenu() }),
-            ("Tools", { [weak self] in self?.toolsMenu() ?? UIMenu() }),
-            ("Help",  { [weak self] in self?.helpMenu()  ?? UIMenu() }),
+        let specs: [(String, () -> [ClassicMenuPopover.Row])] = [
+            ("File",  { [weak self] in self?.fileRows()  ?? [] }),
+            ("Edit",  { [weak self] in self?.editRows()  ?? [] }),
+            ("View",  { [weak self] in self?.viewRows()  ?? [] }),
+            ("Tools", { [weak self] in self?.toolsRows() ?? [] }),
+            ("Help",  { [weak self] in self?.helpRows()  ?? [] }),
         ]
 
         for (title, provider) in specs {
@@ -106,8 +108,7 @@ final class AeroMenuBar: UIView {
             stack.addArrangedSubview(button)
         }
 
-        // Trailing filler keeps buttons hugged to the leading edge, matching
-        // the RN menu bar which left-aligns its items.
+        // Trailing filler keeps buttons hugged to the leading edge.
         let filler = UIView()
         filler.translatesAutoresizingMaskIntoConstraints = false
         filler.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -128,15 +129,7 @@ final class AeroMenuBar: UIView {
         ])
     }
 
-    private func makeMenuButton(title: String, provider: @escaping () -> UIMenu) -> UIButton {
-        // UIDeferredMenuElement.uncached ensures the menu is rebuilt each tap
-        // so checkmarks reflect the latest caller state.
-        let deferred = UIDeferredMenuElement.uncached { completion in
-            completion(provider().children)
-        }
-        let rootMenu = UIMenu(title: title, children: [deferred])
-        rootMenu.preferredElementSize = .small
-
+    private func makeMenuButton(title: String, provider: @escaping () -> [ClassicMenuPopover.Row]) -> UIButton {
         var cfg = UIButton.Configuration.plain()
         cfg.title = title
         cfg.baseForegroundColor = palette.foreground
@@ -149,11 +142,30 @@ final class AeroMenuBar: UIView {
 
         let button = UIButton(type: .system)
         button.configuration = cfg
-        button.showsMenuAsPrimaryAction = true
-        button.menu = rootMenu
         button.accessibilityLabel = title
         button.accessibilityTraits = [.button]
+        button.addTarget(self, action: #selector(menuButtonTapped(_:)), for: .touchUpInside)
+        rowProviders[ObjectIdentifier(button)] = provider
         return button
+    }
+
+    @objc private func menuButtonTapped(_ sender: UIButton) {
+        // Tapping the same menu button while its popover is open dismisses it.
+        let wasOpen = currentPopover != nil
+        currentPopover?.dismiss()
+        currentPopover = nil
+        if wasOpen { return }
+
+        guard let provider = rowProviders[ObjectIdentifier(sender)] else { return }
+        let popover = ClassicMenuPopover(
+            rows: provider(),
+            palette: palette,
+            anchor: sender
+        ) { [weak self] in
+            self?.currentPopover = nil
+        }
+        popover.present()
+        currentPopover = popover
     }
 
     func applyPalette(_ p: Palette) {
@@ -168,100 +180,88 @@ final class AeroMenuBar: UIView {
         }
     }
 
-    // MARK: - Menus
+    // MARK: - Menu rows
 
-    private func fileMenu() -> UIMenu {
-        UIMenu(title: "File", children: [
-            UIAction(title: "New", image: UIImage(systemName: "doc.badge.plus")) { [weak self] _ in self?.onNew?() },
-            UIAction(title: "Open…", image: UIImage(systemName: "folder")) { [weak self] _ in self?.onOpen?() },
-            UIAction(title: "Save…", image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in self?.onSave?() },
-            UIMenu(options: .displayInline, children: [
-                UIAction(title: "Duplicate", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in self?.onDuplicateDoc?() },
-            ]),
-            UIMenu(options: .displayInline, children: [
-                UIAction(title: "Close", image: UIImage(systemName: "xmark")) { [weak self] _ in self?.onClose?() },
-                UIAction(title: "Close others", image: UIImage(systemName: "xmark.rectangle")) { [weak self] _ in self?.onCloseOthers?() },
-            ]),
-        ])
+    private func fileRows() -> [ClassicMenuPopover.Row] {
+        [
+            .action(title: "New",          symbol: "doc.badge.plus",          checked: false, destructive: false) { [weak self] in self?.onNew?() },
+            .action(title: "Open…",        symbol: "folder",                  checked: false, destructive: false) { [weak self] in self?.onOpen?() },
+            .action(title: "Save…",        symbol: "square.and.arrow.down",   checked: false, destructive: false) { [weak self] in self?.onSave?() },
+            .divider,
+            .action(title: "Duplicate",    symbol: "plus.square.on.square",   checked: false, destructive: false) { [weak self] in self?.onDuplicateDoc?() },
+            .divider,
+            .action(title: "Close",        symbol: "xmark",                   checked: false, destructive: false) { [weak self] in self?.onClose?() },
+            .action(title: "Close others", symbol: "xmark.rectangle",         checked: false, destructive: false) { [weak self] in self?.onCloseOthers?() },
+        ]
     }
 
-    private func editMenu() -> UIMenu {
-        let undoRedo = UIMenu(options: .displayInline, children: [
-            UIAction(title: "Undo", image: UIImage(systemName: "arrow.uturn.backward")) { [weak self] _ in self?.onUndo?() },
-            UIAction(title: "Redo", image: UIImage(systemName: "arrow.uturn.forward")) { [weak self] _ in self?.onRedo?() },
-        ])
-        let clipboard = UIMenu(options: .displayInline, children: [
-            UIAction(title: "Cut", image: UIImage(systemName: "scissors")) { [weak self] _ in self?.onCut?() },
-            UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in self?.onCopy?() },
-            UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in self?.onPaste?() },
-            UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard.fill")) { [weak self] _ in self?.onPaste?() },
-        ])
-        let selection = UIMenu(options: .displayInline, children: [
-            UIAction(title: "Select All", image: UIImage(systemName: "selection.pin.in.out")) { [weak self] _ in self?.onSelectAll?() },
-            UIAction(title: "Find", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onFind?() },
-            UIAction(title: "Go to line…", image: UIImage(systemName: "arrow.right.to.line")) { [weak self] _ in self?.onGotoLine?() },
-        ])
-        let text = UIMenu(options: .displayInline, children: [
-            UIAction(title: "Insert date/time", image: UIImage(systemName: "clock")) { [weak self] _ in self?.onInsertDateTime?() },
-            UIAction(title: "Sort lines", image: UIImage(systemName: "arrow.up.arrow.down")) { [weak self] _ in self?.onSortLines?() },
-            UIAction(title: "Trim trailing spaces", image: UIImage(systemName: "scissors")) { [weak self] _ in self?.onTrimSpaces?() },
-            UIAction(title: "Duplicate line", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in self?.onDuplicateLine?() },
-            UIAction(title: "Delete line", image: UIImage(systemName: "minus.square"), attributes: .destructive) { [weak self] _ in self?.onDeleteLine?() },
-        ])
-        return UIMenu(title: "Edit", children: [undoRedo, clipboard, selection, text])
+    private func editRows() -> [ClassicMenuPopover.Row] {
+        [
+            .action(title: "Undo",                 symbol: "arrow.uturn.backward",     checked: false, destructive: false) { [weak self] in self?.onUndo?() },
+            .action(title: "Redo",                 symbol: "arrow.uturn.forward",      checked: false, destructive: false) { [weak self] in self?.onRedo?() },
+            .divider,
+            .action(title: "Cut",                  symbol: "scissors",                 checked: false, destructive: false) { [weak self] in self?.onCut?() },
+            .action(title: "Copy",                 symbol: "doc.on.doc",               checked: false, destructive: false) { [weak self] in self?.onCopy?() },
+            .action(title: "Paste",                symbol: "doc.on.clipboard",         checked: false, destructive: false) { [weak self] in self?.onPaste?() },
+            .divider,
+            .action(title: "Select All",           symbol: "selection.pin.in.out",     checked: false, destructive: false) { [weak self] in self?.onSelectAll?() },
+            .action(title: "Find",                 symbol: "magnifyingglass",          checked: false, destructive: false) { [weak self] in self?.onFind?() },
+            .action(title: "Go to line…",          symbol: "arrow.right.to.line",      checked: false, destructive: false) { [weak self] in self?.onGotoLine?() },
+            .divider,
+            .action(title: "Insert date/time",     symbol: "clock",                    checked: false, destructive: false) { [weak self] in self?.onInsertDateTime?() },
+            .action(title: "Sort lines",           symbol: "arrow.up.arrow.down",      checked: false, destructive: false) { [weak self] in self?.onSortLines?() },
+            .action(title: "Trim trailing spaces", symbol: "scissors",                 checked: false, destructive: false) { [weak self] in self?.onTrimSpaces?() },
+            .action(title: "Duplicate line",       symbol: "plus.square.on.square",    checked: false, destructive: false) { [weak self] in self?.onDuplicateLine?() },
+            .action(title: "Delete line",          symbol: "minus.square",             checked: false, destructive: true)  { [weak self] in self?.onDeleteLine?() },
+        ]
     }
 
-    private func viewMenu() -> UIMenu {
-        let toolbarOpen = isToolbarOpen?() ?? true
-        let labelsVisible = isToolbarLabelsVisible?() ?? false
-        let rowsDouble = isToolbarRowsDouble?() ?? false
-        let zen = isZenMode?() ?? false
-        let compare = isCompareOpen?() ?? false
+    private func viewRows() -> [ClassicMenuPopover.Row] {
+        let toolbarOpen   = isToolbarOpen?()           ?? true
+        let labelsVisible = isToolbarLabelsVisible?()  ?? false
+        let rowsDouble    = isToolbarRowsDouble?()     ?? false
+        let zen           = isZenMode?()               ?? false
+        let compare       = isCompareOpen?()           ?? false
 
-        let toolbarGroup = UIMenu(options: .displayInline, children: [
-            actionWithCheck(title: "Toolbar", checked: toolbarOpen) { [weak self] in self?.onToggleToolbar?() },
-            actionWithCheck(title: "Show labels", checked: labelsVisible) { [weak self] in self?.onToggleToolbarLabels?() },
-        ])
-        let rowsGroup = UIMenu(title: "Toolbar rows", image: UIImage(systemName: "rectangle.split.1x2"), children: [
-            actionWithCheck(title: "Single row", checked: !rowsDouble) { [weak self] in self?.onSetToolbarRowsSingle?() },
-            actionWithCheck(title: "Two rows", checked: rowsDouble) { [weak self] in self?.onSetToolbarRowsDouble?() },
-        ])
-        let viewModes = UIMenu(options: .displayInline, children: [
-            actionWithCheck(title: "Zen mode", checked: zen) { [weak self] in self?.onToggleZen?() },
-            actionWithCheck(title: "Compare", checked: compare) { [weak self] in self?.onToggleCompare?() },
-        ])
-        let layout = UIMenu(options: .displayInline, children: [
-            UIAction(title: "Switch layout to mobile", image: UIImage(systemName: "iphone")) { [weak self] _ in self?.onSwitchToMobileLayout?() },
-        ])
-        return UIMenu(title: "View", children: [toolbarGroup, rowsGroup, viewModes, layout])
+        let rowsSubmenu: [ClassicMenuPopover.Row] = [
+            .action(title: "Single row", symbol: "rectangle",              checked: !rowsDouble, destructive: false) { [weak self] in self?.onSetToolbarRowsSingle?() },
+            .action(title: "Two rows",   symbol: "rectangle.split.1x2",    checked: rowsDouble,  destructive: false) { [weak self] in self?.onSetToolbarRowsDouble?() },
+        ]
+
+        return [
+            .action(title: "Toolbar",                  symbol: "rectangle.topthird.inset.filled", checked: toolbarOpen,   destructive: false) { [weak self] in self?.onToggleToolbar?() },
+            .action(title: "Show labels",              symbol: "textformat.size",                 checked: labelsVisible, destructive: false) { [weak self] in self?.onToggleToolbarLabels?() },
+            .divider,
+            .submenu(title: "Toolbar rows", symbol: "rectangle.split.1x2", children: rowsSubmenu),
+            .divider,
+            .action(title: "Zen mode",                 symbol: "rectangle.compress.vertical",     checked: zen,           destructive: false) { [weak self] in self?.onToggleZen?() },
+            .action(title: "Compare",                  symbol: "rectangle.split.2x1",             checked: compare,       destructive: false) { [weak self] in self?.onToggleCompare?() },
+            .divider,
+            .action(title: "Switch layout to mobile",  symbol: "iphone",                          checked: false,         destructive: false) { [weak self] in self?.onSwitchToMobileLayout?() },
+        ]
     }
 
-    private func toolsMenu() -> UIMenu {
-        let prefs = UIAction(title: "Preferences…", image: UIImage(systemName: "gear")) { [weak self] _ in self?.onPreferences?() }
+    private func toolsRows() -> [ClassicMenuPopover.Row] {
         let current = currentTheme?() ?? .classic
-
-        let quickThemes = ThemeName.allCases
+        let themeChildren: [ClassicMenuPopover.Row] = ThemeName.allCases
             .filter { $0 != .custom }
             .map { name in
-                actionWithCheck(title: label(for: name), checked: name == current) { [weak self] in
+                .action(title: label(for: name), symbol: nil, checked: name == current, destructive: false) { [weak self] in
                     self?.onPickTheme?(name)
                 }
             }
-        let themeMenu = UIMenu(title: "Theme", image: UIImage(systemName: "paintpalette"), children: quickThemes)
-        return UIMenu(title: "Tools", children: [prefs, themeMenu])
+        return [
+            .action(title: "Preferences…", symbol: "gear", checked: false, destructive: false) { [weak self] in self?.onPreferences?() },
+            .divider,
+            .submenu(title: "Theme", symbol: "paintpalette", children: themeChildren),
+        ]
     }
 
-    private func helpMenu() -> UIMenu {
-        UIMenu(title: "Help", children: [
-            UIAction(title: "About Notepad 3++", image: UIImage(systemName: "info.circle")) { [weak self] _ in self?.onAbout?() },
-            UIAction(title: "Version", image: UIImage(systemName: "tag")) { [weak self] _ in self?.onVersion?() },
-        ])
-    }
-
-    private func actionWithCheck(title: String, checked: Bool, handler: @escaping () -> Void) -> UIAction {
-        let action = UIAction(title: title) { _ in handler() }
-        action.state = checked ? .on : .off
-        return action
+    private func helpRows() -> [ClassicMenuPopover.Row] {
+        [
+            .action(title: "About Notepad 3++", symbol: "info.circle", checked: false, destructive: false) { [weak self] in self?.onAbout?() },
+            .action(title: "Version",           symbol: "tag",         checked: false, destructive: false) { [weak self] in self?.onVersion?() },
+        ]
     }
 
     private func label(for name: ThemeName) -> String {
