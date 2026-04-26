@@ -379,6 +379,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         accessory.onSelectAll = { [weak self] in self?.selectAll(nil) }
         accessory.onArrow = { [weak self] dir in self?.moveCursor(direction: dir) }
         accessory.onShiftToggle = { [weak self] in self?.toggleShift() }
+        accessory.onDelete = { [weak self] in self?.deleteBackwardFromCaret() }
         accessory.onFind = { [weak self] in self?.toggleFind() }
         accessory.onReplace = { [weak self] in self?.toggleFind(showReplace: true) }
         accessory.onInsertDate = { [weak self] in self?.insertText(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)) }
@@ -1054,6 +1055,20 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         let ns = (textView.text ?? "") as NSString
         let (s, e) = lineRange(in: ns, at: textView.selectedRange.location)
         textView.selectedRange = NSRange(location: s, length: e - s)
+    }
+
+    private func deleteBackwardFromCaret() {
+        // Empty selection: delete the character before the caret.
+        // Non-empty selection: delete the selected range.
+        let r = textView.selectedRange
+        if r.length > 0 {
+            textView.deleteBackward()
+        } else if r.location > 0 {
+            // Build a 1-char-back range and delete via setSelected + deleteBackward
+            // so undoManager records it.
+            textView.selectedRange = NSRange(location: r.location - 1, length: 1)
+            textView.deleteBackward()
+        }
     }
 
     private func toggleShift() {

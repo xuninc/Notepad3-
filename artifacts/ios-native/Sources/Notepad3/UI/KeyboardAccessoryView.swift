@@ -43,8 +43,8 @@ final class KeyboardAccessoryView: UIView {
     }
     var shiftActive: Bool = false {
         didSet {
-            shiftButton?.isActive = shiftActive
-            shiftButton?.setSymbol(shiftActive ? "shift.fill" : "shift")
+            clusterShift.isActive = shiftActive
+            clusterShift.setSymbol(shiftActive ? "shift.fill" : "shift")
             applyPaletteToButtons()
         }
     }
@@ -63,6 +63,7 @@ final class KeyboardAccessoryView: UIView {
     var onSelectAll: (() -> Void)?
     var onShiftToggle: (() -> Void)?
     var onArrow: ((Arrow) -> Void)?
+    var onDelete: (() -> Void)?
     var onFind: (() -> Void)?
     var onReplace: (() -> Void)?
     var onInsertDate: (() -> Void)?
@@ -79,9 +80,23 @@ final class KeyboardAccessoryView: UIView {
     private let topBorder = UIView()
     private let middleBorder = UIView()
 
+    // Static "virtual D-pad" cluster pinned to the leading edge. Always
+    // visible regardless of accessoryRows, scrolling, or whatever the rest
+    // of the bar is up to. 3 columns × 2 rows:
+    //   top: [Shift] [↑]  [Delete]
+    //   bot: [ ←  ] [↓]  [  →   ]
+    private let clusterContainer = UIView()
+    private let clusterDivider = UIView()
+    private let clusterShift: KbButton
+    private let clusterUp: KbHoldButton
+    private let clusterDelete: KbHoldButton
+    private let clusterLeft: KbHoldButton
+    private let clusterDown: KbHoldButton
+    private let clusterRight: KbHoldButton
+
     private var palette: Palette = .light
 
-    // Button references we toggle.
+    // Button references we toggle in the scrolling part.
     private weak var readButton: KbButton?
     private weak var undoButton: KbButton?
     private weak var redoButton: KbButton?
@@ -89,7 +104,6 @@ final class KeyboardAccessoryView: UIView {
     private weak var findButton: KbButton?
     private weak var replaceButton: KbButton?
     private weak var compareButton: KbButton?
-    private weak var shiftButton: KbButton?
 
     private var allButtons: [KbButton] = []
     private var allSeparators: [UIView] = []
@@ -97,9 +111,18 @@ final class KeyboardAccessoryView: UIView {
     // MARK: - Init
 
     override init(frame: CGRect) {
+        // Cluster buttons are owned by self; built here so we can store strong
+        // references that survive `rebuildLayout()` (the cluster never rebuilds).
+        clusterShift  = KbButton(symbol: "shift", label: "Shift") { }
+        clusterUp     = KbHoldButton(symbol: "arrow.up")    { }
+        clusterDelete = KbHoldButton(symbol: "delete.left") { }
+        clusterLeft   = KbHoldButton(symbol: "arrow.left")  { }
+        clusterDown   = KbHoldButton(symbol: "arrow.down")  { }
+        clusterRight  = KbHoldButton(symbol: "arrow.right") { }
         super.init(frame: frame)
         autoresizingMask = [.flexibleWidth]
         setupBase()
+        wireClusterCallbacks()
         rebuildLayout()
     }
 
@@ -128,18 +151,70 @@ final class KeyboardAccessoryView: UIView {
         topScroll.addSubview(topStack)
         bottomScroll.addSubview(bottomStack)
 
+        // Build the 3×2 cluster.
+        clusterContainer.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(clusterContainer)
+
+        let topCluster = UIStackView(arrangedSubviews: [clusterShift, clusterUp, clusterDelete])
+        let botCluster = UIStackView(arrangedSubviews: [clusterLeft, clusterDown, clusterRight])
+        for st in [topCluster, botCluster] {
+            st.translatesAutoresizingMaskIntoConstraints = false
+            st.axis = .horizontal
+            st.alignment = .center
+            st.distribution = .fillEqually
+            st.spacing = 2
+        }
+        clusterContainer.addSubview(topCluster)
+        clusterContainer.addSubview(botCluster)
+
+        clusterDivider.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(clusterDivider)
+
         NSLayoutConstraint.activate([
             topBorder.topAnchor.constraint(equalTo: topAnchor),
             topBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
             topBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
             topBorder.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+
+            // Cluster — fixed 132pt wide, fills the bar's height.
+            clusterContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            clusterContainer.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            clusterContainer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+            clusterContainer.widthAnchor.constraint(equalToConstant: 132),
+
+            // Vertical divider between cluster and the scrolling part.
+            clusterDivider.leadingAnchor.constraint(equalTo: clusterContainer.trailingAnchor, constant: 4),
+            clusterDivider.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            clusterDivider.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            clusterDivider.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+
+            topCluster.topAnchor.constraint(equalTo: clusterContainer.topAnchor),
+            topCluster.leadingAnchor.constraint(equalTo: clusterContainer.leadingAnchor),
+            topCluster.trailingAnchor.constraint(equalTo: clusterContainer.trailingAnchor),
+            topCluster.heightAnchor.constraint(equalTo: clusterContainer.heightAnchor, multiplier: 0.5, constant: -1),
+
+            botCluster.topAnchor.constraint(equalTo: topCluster.bottomAnchor, constant: 2),
+            botCluster.leadingAnchor.constraint(equalTo: clusterContainer.leadingAnchor),
+            botCluster.trailingAnchor.constraint(equalTo: clusterContainer.trailingAnchor),
+            botCluster.bottomAnchor.constraint(equalTo: clusterContainer.bottomAnchor),
         ])
+    }
+
+    private func wireClusterCallbacks() {
+        clusterShift.onTap  = { [weak self] in self?.onShiftToggle?() }
+        clusterUp.tickHandler     = { [weak self] in self?.onArrow?(.up) }
+        clusterDelete.tickHandler = { [weak self] in self?.onDelete?() }
+        clusterLeft.tickHandler   = { [weak self] in self?.onArrow?(.left) }
+        clusterDown.tickHandler   = { [weak self] in self?.onArrow?(.down) }
+        clusterRight.tickHandler  = { [weak self] in self?.onArrow?(.right) }
     }
 
     // MARK: - Intrinsic size
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: rows == .double ? 88 : 44)
+        // Bar is always 88pt tall — the static cluster on the leading edge
+        // is a 2-row D-pad regardless of how the scrolling part is split.
+        CGSize(width: UIView.noIntrinsicMetric, height: 88)
     }
 
     // MARK: - Layout
@@ -155,12 +230,15 @@ final class KeyboardAccessoryView: UIView {
         allButtons.removeAll()
         allSeparators.removeAll()
         readButton = nil; undoButton = nil; redoButton = nil; cutButton = nil
-        findButton = nil; replaceButton = nil; compareButton = nil; shiftButton = nil
+        findButton = nil; replaceButton = nil; compareButton = nil
 
         // Build the full ordered list of items.
         let items = makeItems()
 
         // Split across rows if requested.
+        // Scrolling part starts after the cluster + divider.
+        let scrollLeading = clusterDivider.trailingAnchor
+
         if rows == .double {
             let half = Int((Double(items.count) / 2.0).rounded(.up))
             let top = Array(items.prefix(half))
@@ -173,17 +251,17 @@ final class KeyboardAccessoryView: UIView {
 
             activeConstraints = [
                 topScroll.topAnchor.constraint(equalTo: topAnchor),
-                topScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+                topScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
                 topScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
                 topScroll.heightAnchor.constraint(equalToConstant: 44),
 
                 middleBorder.topAnchor.constraint(equalTo: topScroll.bottomAnchor),
-                middleBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
+                middleBorder.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
                 middleBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
                 middleBorder.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
 
                 bottomScroll.topAnchor.constraint(equalTo: middleBorder.bottomAnchor),
-                bottomScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+                bottomScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
                 bottomScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
                 bottomScroll.bottomAnchor.constraint(equalTo: bottomAnchor),
 
@@ -204,11 +282,13 @@ final class KeyboardAccessoryView: UIView {
             bottomScroll.isHidden = true
             middleBorder.isHidden = true
 
+            // Single-row scrolling part is 44pt tall, vertically centered
+            // next to the 88pt cluster, leaving the other 44pt empty.
             activeConstraints = [
-                topScroll.topAnchor.constraint(equalTo: topAnchor),
-                topScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+                topScroll.centerYAnchor.constraint(equalTo: centerYAnchor),
+                topScroll.heightAnchor.constraint(equalToConstant: 44),
+                topScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
                 topScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-                topScroll.bottomAnchor.constraint(equalTo: bottomAnchor),
 
                 topStack.topAnchor.constraint(equalTo: topScroll.contentLayoutGuide.topAnchor, constant: 4),
                 topStack.leadingAnchor.constraint(equalTo: topScroll.contentLayoutGuide.leadingAnchor, constant: 4),
@@ -273,18 +353,6 @@ final class KeyboardAccessoryView: UIView {
         let line = KbButton(symbol: "minus", label: "Line") { [weak self] in self?.onSelectLine?() }
         let all = KbButton(symbol: "character.textbox", label: "All") { [weak self] in self?.onSelectAll?() }
 
-        let left  = KbHoldButton(symbol: "arrow.left")  { [weak self] in self?.onArrow?(.left) }
-        let up    = KbHoldButton(symbol: "arrow.up")    { [weak self] in self?.onArrow?(.up) }
-        let down  = KbHoldButton(symbol: "arrow.down")  { [weak self] in self?.onArrow?(.down) }
-        let right = KbHoldButton(symbol: "arrow.right") { [weak self] in self?.onArrow?(.right) }
-
-        // Shift extends selection while arrows tick. Modeled on hardware
-        // keyboards' shift behavior. `shift.fill` when active so the change
-        // in tint+glyph is unmistakable.
-        let shift = KbButton(symbol: shiftActive ? "shift.fill" : "shift", label: "Shift") { [weak self] in self?.onShiftToggle?() }
-        shift.isActive = shiftActive
-        shiftButton = shift
-
         let find = KbButton(symbol: "magnifyingglass", label: "Find") { [weak self] in self?.onFind?() }
         find.isActive = findActive
         findButton = find
@@ -299,16 +367,12 @@ final class KeyboardAccessoryView: UIView {
         compareButton = compare
         let more = KbButton(symbol: "ellipsis", label: "More") { [weak self] in self?.onMore?() }
 
-        // Front cluster: Hide, arrows, Shift, Cut/Copy/Paste, Word/Line/All,
-        // Undo/Redo. Trailing cluster: Read, Find/Replace, Date/Open/Compare/
-        // More. The front cluster is what users reach for during active text
-        // navigation; the trailing items are mode/file/auxiliary.
+        // Arrow keys, Shift, and Delete now live in the static cluster on the
+        // leading edge, so they're omitted from the scrolling list. What's
+        // left is grouped by frequency: Hide → clipboard → selection helpers
+        // → history → mode/file/auxiliary.
         return [
             .button(hide),
-            .separator,
-            .button(left), .button(up), .button(down), .button(right),
-            .separator,
-            .button(shift),
             .separator,
             .button(cut), .button(copy), .button(paste),
             .separator,
@@ -329,6 +393,7 @@ final class KeyboardAccessoryView: UIView {
         backgroundColor = p.card
         topBorder.backgroundColor = p.border
         middleBorder.backgroundColor = p.border
+        clusterDivider.backgroundColor = p.border
         applyPaletteToButtons()
     }
 
@@ -338,6 +403,10 @@ final class KeyboardAccessoryView: UIView {
         }
         for sep in allSeparators {
             sep.backgroundColor = palette.border
+        }
+        // Cluster buttons live outside `allButtons` (they're never rebuilt).
+        for btn in [clusterShift, clusterUp, clusterDelete, clusterLeft, clusterDown, clusterRight] {
+            btn.applyPalette(palette)
         }
     }
 }
@@ -460,7 +529,7 @@ private final class KbHoldButton: KbButton {
     private var holdTimer: Timer?
     private var initialDelayTimer: Timer?
     private var repeatCount: Int = 0
-    private var tickHandler: () -> Void
+    var tickHandler: () -> Void
 
     init(symbol: String, label: String? = nil, onTick: @escaping () -> Void) {
         self.tickHandler = onTick
