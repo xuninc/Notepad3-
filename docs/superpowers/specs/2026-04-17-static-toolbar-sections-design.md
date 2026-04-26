@@ -129,17 +129,22 @@ Long-press on any toolbar button still triggers the accessibility-announcer labe
 
 ## 6. Two-row mode migrations
 
-Toolbar row count is a user preference (`toolbarRows: single | double`). Migrating a non-empty pin map between modes:
+### 6.0 Terminology — `toolbarRows` vs static-zone stacking
 
-### 6.1 `double → single`
+These are orthogonal:
 
-For each pinned button currently on row 2, **collapse it to the same side of row 1**, appended after row 1's existing pins on that side.
+- **`toolbarRows: single | double`** is a user preference that controls the **scrolling region only** — whether the canonical `items()` button list renders in one horizontally-scrolling row or splits across two. Today's two values are kept; no `multi` value is added (the scrolling region scrolls, so you never need more than two such rows).
+- **Static-zone stacking (§4.4)** is automatic and only triggers when *pinned* buttons overflow a single sub-row's 35% width cap. It can grow either zone vertically into 2, 3, or more sub-rows independently of `toolbarRows`.
 
-If collapsing would violate the capacity rule (§4.4) for row 1, the surplus row-2 pins are **demoted to None** (i.e. unpinned, falling back into the scrolling region in canonical order). A one-shot info banner in the Preferences modal tells the user: "*N pinned buttons couldn't fit when switching to one row and were unpinned.*"
+A user in `single` mode with 12 buttons pinned to start may see a toolbar that is visually 3 sub-rows tall on its left side, with a single scrolling row in the middle. That is correct behavior, not a `toolbarRows` change.
 
-### 6.2 `single → double`
+### 6.1 Migrations between `single` and `double`
 
-All pins remain on row 1. Row 2 starts empty. The user can re-pin to row 2 via the settings panel or by entering edit mode and dragging.
+Migrating a non-empty pin map between `toolbarRows` modes:
+
+**`double → single`.** For each pinned button currently on row 2, **collapse it to the same side of row 1**, appended after row 1's existing pins on that side. With stacking, this rarely overflows. If even with stacking it would violate the §4.4 hard backstop (scrolling middle below 80 pt), the surplus row-2 pins are **demoted to None** (i.e. unpinned, falling back into the scrolling region in canonical order). A one-shot info banner in the Preferences modal tells the user: "*N pinned buttons couldn't fit when switching to one row and were unpinned.*"
+
+**`single → double`.** All pins remain on row 1. Row 2 starts empty. The user can re-pin to row 2 via the settings panel or by entering edit mode and dragging.
 
 Rationale: this matches user intent ("I had them pinned where they were"); making the system *spread* pins across rows would surprise the user and require a heuristic the user didn't ask for.
 
