@@ -1,0 +1,23 @@
+# Built output
+build/
+app/build/
+out/
+
+# Generated Android files
+local.properties
+.cxx/
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+captures/
+.gradle/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated/temporary
+*.apk
+*.aab
+release/

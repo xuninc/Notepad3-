@@ -1,0 +1,51 @@
+name: Build Android Native
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "android-native-v*"
+
+jobs:
+  build:
+    name: Build debug APK (Kotlin / Compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: artifacts/android-native
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java (Temurin 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Show toolchain versions
+        run: |
+          java -version
+          ./gradlew --version
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          echo "==> APK outputs:"
+          find app/build/outputs/apk -name "*.apk" -print
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepad3-android-debug-apk
+          path: artifacts/android-native/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

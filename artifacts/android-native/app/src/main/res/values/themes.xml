@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme for the app. Material3 NoActionBar is our starting point;
+         the actual chrome is drawn entirely in Compose using LocalPalette,
+         so the resource theme just removes the default Material chrome. -->
+    <style name="Theme.Notepad3" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
