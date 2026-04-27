@@ -5,6 +5,8 @@
 **Author:** Claude (Opus 4.7) with Corey
 **Scope:** 1-for-1 feature port of the React Native Notepad 3++ app to native Swift/UIKit for iOS 16+
 
+> **2026-04-26 update — RN archived.** The React Native / Expo app was removed from this repo on 2026-04-26 and preserved on the `archive/rn-garbage` branch. The Swift port at `artifacts/ios-native/` is now the *only* iOS path, not a parallel one to a live RN app. Anywhere this doc says "RN is the oracle" or "match the RN behavior" should be read as historical / aspirational at the moment of the port, not as ongoing parity work. Any salvage (assets, behavior references) comes from the archive branch. A native Android port is planned as a sibling (separate spec).
+
 ---
 
 ## 1. Context
