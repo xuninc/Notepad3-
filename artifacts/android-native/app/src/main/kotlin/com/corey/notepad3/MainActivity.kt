@@ -1,52 +1,68 @@
 package com.corey.notepad3
 
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
+import com.corey.notepad3.app.AndroidEditorPreferences
+import com.corey.notepad3.app.EditorPreferenceController
+import com.corey.notepad3.app.NotepadApp
+import com.corey.notepad3.persistence.DocumentStore
+import com.corey.notepad3.theme.AndroidThemePreferences
+import com.corey.notepad3.theme.ThemeController
 
-/**
- * Phase 0 entry point. Empty Compose surface that proves the toolchain
- * works end-to-end. Phase 1 replaces this with the real editor + theme
- * controller; for now we just verify the wrapper / AGP / Compose / IDE
- * bind together and produce a launchable APK.
- */
 class MainActivity : ComponentActivity() {
+    private lateinit var openDocumentLauncher: ActivityResultLauncher<Array<String>>
+
+    private val documentStore: DocumentStore by lazy {
+        DocumentStore(filesDir.resolve("documents-v1.json"))
+    }
+
+    private val themeController: ThemeController by lazy {
+        ThemeController(AndroidThemePreferences(this))
+    }
+
+    private val editorPreferenceController: EditorPreferenceController by lazy {
+        EditorPreferenceController(AndroidEditorPreferences(this))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openDocumentLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let(::importDocument)
+        }
         enableEdgeToEdge()
         setContent {
-            MaterialTheme {
-                HelloScreen()
-            }
+            NotepadApp(
+                store = documentStore,
+                themeController = themeController,
+                editorPreferenceController = editorPreferenceController,
+                onOpenFile = {
+                    openDocumentLauncher.launch(
+                        arrayOf("text/*", "application/json", "application/xml", "application/javascript"),
+                    )
+                },
+                onCloseApp = ::finishAndRemoveTask,
+            )
         }
     }
-}
 
-@Composable
-private fun HelloScreen() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFDBE5F1))      // Classic palette background
-            .padding(32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "Notepad 3++ — Phase 0\n(skeleton + CI + first APK)",
-            color = Color(0xFF0F1F33),          // Classic foreground
-            style = MaterialTheme.typography.titleMedium,
-        )
+    private fun importDocument(uri: Uri) {
+        val body = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return
+        documentStore.importDocument(title = displayName(uri), body = body)
+    }
+
+    private fun displayName(uri: Uri): String {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (column >= 0 && cursor.moveToFirst()) {
+                return cursor.getString(column)
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "untitled.txt"
     }
 }
