@@ -31,6 +31,12 @@ android {
             // install enabled.
             isMinifyEnabled = false
         }
+        create("qa") {
+            initWith(getByName("debug"))
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("debug")
+        }
     }
 
     compileOptions {

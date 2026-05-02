@@ -7,7 +7,6 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import com.corey.notepad3.app.AndroidEditorPreferences
 import com.corey.notepad3.app.EditorPreferenceController
 import com.corey.notepad3.app.NotepadApp
@@ -35,7 +34,6 @@ class MainActivity : ComponentActivity() {
         openDocumentLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let(::importDocument)
         }
-        enableEdgeToEdge()
         setContent {
             NotepadApp(
                 store = documentStore,

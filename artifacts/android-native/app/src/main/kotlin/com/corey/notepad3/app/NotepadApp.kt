@@ -16,16 +16,21 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,13 +51,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.corey.notepad3.editor.EditResult
 import com.corey.notepad3.editor.EditorCommands
@@ -105,6 +114,8 @@ fun NotepadApp(
     var readMode by rememberSaveable { mutableStateOf(false) }
     var zenMode by rememberSaveable { mutableStateOf(false) }
     val showingMarkdownPreview = previewMode && active.language == DocumentLanguage.MARKDOWN
+    val canUndo = historyVersion.let { history.canUndo }
+    val canRedo = historyVersion.let { history.canRedo }
 
     fun rememberSelection(selection: TextSelection) {
         selections[active.id] = selection
@@ -150,6 +161,66 @@ fun NotepadApp(
         }
     }
 
+    fun toggleDocumentsPanel() {
+        showDocuments = !showDocuments
+    }
+
+    fun toggleFindPanel() {
+        showFind = !showFind
+    }
+
+    fun toggleComparePanel() {
+        showCompare = !showCompare
+    }
+
+    fun toggleMorePanel() {
+        showMore = !showMore
+    }
+
+    fun toggleLayoutMode() {
+        editorPreferenceController.toggleLayoutMode()
+        showMore = false
+    }
+
+    fun cycleTheme() {
+        themeController.cycleEarlyThemes()
+        showMore = false
+    }
+
+    fun undoEdit() {
+        replaceBodyFromHistory(history.undo())
+    }
+
+    fun redoEdit() {
+        replaceBodyFromHistory(history.redo())
+    }
+
+    fun startGotoLine() {
+        gotoValue = activeSelection.lineNumberIn(active.body).toString()
+        showGoto = true
+        showMore = false
+    }
+
+    fun selectAllText() {
+        applySelection(EditorCommands.selectAll(active.body))
+    }
+
+    fun duplicateLine() {
+        if (!readMode) commitEdit(EditorCommands.duplicateCurrentLine(active.body, activeSelection.min))
+    }
+
+    fun deleteLine() {
+        if (!readMode) commitEdit(EditorCommands.deleteCurrentLine(active.body, activeSelection.min))
+    }
+
+    fun trimSelection() {
+        if (!readMode) commitEdit(EditorCommands.trimTrailingSpaces(active.body, activeSelection))
+    }
+
+    fun sortDocument() {
+        if (!readMode) commitEdit(EditorCommands.sortLines(active.body))
+    }
+
     if (zenMode) {
         BackHandler {
             zenMode = false
@@ -166,7 +237,13 @@ fun NotepadApp(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(if (zenMode) 0.dp else 12.dp),
+                    .padding(
+                        when {
+                            zenMode -> 0.dp
+                            layoutMode == EditorLayoutMode.CLASSIC -> 6.dp
+                            else -> 10.dp
+                        },
+                    ),
             ) {
                 if (!zenMode) {
                     WindowBar(
@@ -174,13 +251,24 @@ fun NotepadApp(
                         palette = palette,
                         layoutMode = layoutMode,
                         compareEnabled = snapshot.documents.size > 1,
-                        onTitleChange = { store.updateActive(title = it) },
-                        onCycleTheme = { themeController.cycleEarlyThemes() },
-                        onOpen = { showDocuments = !showDocuments },
-                        onFind = { showFind = !showFind },
-                        onCompare = { showCompare = !showCompare },
-                        onMore = { showMore = !showMore },
+                        canUndo = canUndo,
+                        canRedo = canRedo,
+                        readOnly = readMode,
+                        onCycleTheme = ::cycleTheme,
+                        onOpen = ::toggleDocumentsPanel,
+                        onFind = ::toggleFindPanel,
+                        onCompare = ::toggleComparePanel,
+                        onMore = ::toggleMorePanel,
                         onNew = store::createBlank,
+                        onUndo = ::undoEdit,
+                        onRedo = ::redoEdit,
+                        onGotoLine = ::startGotoLine,
+                        onSelectAll = ::selectAllText,
+                        onDuplicateLine = ::duplicateLine,
+                        onDeleteLine = ::deleteLine,
+                        onTrim = ::trimSelection,
+                        onSort = ::sortDocument,
+                        onToggleLayoutMode = ::toggleLayoutMode,
                         onCloseApp = onCloseApp,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -189,6 +277,7 @@ fun NotepadApp(
                         activeId = snapshot.activeId,
                         palette = palette,
                         onSelect = store::setActive,
+                        onClose = store::close,
                     )
                     if (showDocuments) {
                         Spacer(Modifier.height(8.dp))
@@ -294,17 +383,11 @@ fun NotepadApp(
                             readMode = readMode,
                             zenMode = zenMode,
                             layoutMode = layoutMode,
-                            onUndo = { replaceBodyFromHistory(history.undo()) },
-                            onRedo = { replaceBodyFromHistory(history.redo()) },
+                            onUndo = ::undoEdit,
+                            onRedo = ::redoEdit,
                             onInsertDateTime = ::insertDateTime,
-                            onGotoLine = {
-                                gotoValue = activeSelection.lineNumberIn(active.body).toString()
-                                showGoto = true
-                                showMore = false
-                            },
-                            onSelectAll = {
-                                applySelection(EditorCommands.selectAll(active.body))
-                            },
+                            onGotoLine = ::startGotoLine,
+                            onSelectAll = ::selectAllText,
                             onSelectWord = {
                                 applySelection(EditorCommands.selectWord(active.body, activeSelection.min))
                             },
@@ -352,15 +435,9 @@ fun NotepadApp(
                             onRemoveDuplicateLines = {
                                 commitEdit(EditorCommands.removeDuplicateLines(active.body))
                             },
-                            onSort = {
-                                commitEdit(EditorCommands.sortLines(active.body))
-                            },
-                            onDuplicateLine = {
-                                commitEdit(EditorCommands.duplicateCurrentLine(active.body, activeSelection.min))
-                            },
-                            onDeleteLine = {
-                                commitEdit(EditorCommands.deleteCurrentLine(active.body, activeSelection.min))
-                            },
+                            onSort = ::sortDocument,
+                            onDuplicateLine = ::duplicateLine,
+                            onDeleteLine = ::deleteLine,
                             onDuplicateDocument = {
                                 store.duplicateActive()
                                 showMore = false
@@ -385,14 +462,8 @@ fun NotepadApp(
                                 showMore = false
                             },
                             onToggleZenMode = ::toggleZenMode,
-                            onToggleLayoutMode = {
-                                editorPreferenceController.toggleLayoutMode()
-                                showMore = false
-                            },
-                            onCycleTheme = {
-                                themeController.cycleEarlyThemes()
-                                showMore = false
-                            },
+                            onToggleLayoutMode = ::toggleLayoutMode,
+                            onCycleTheme = ::cycleTheme,
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -405,6 +476,7 @@ fun NotepadApp(
                         palette = palette,
                         selection = activeSelection,
                         readOnly = readMode,
+                        showLineNumbers = layoutMode == EditorLayoutMode.CLASSIC,
                         onSelectionChange = ::rememberSelection,
                         onBodyChange = { next, nextSelection ->
                             if (!readMode) {
@@ -425,10 +497,11 @@ fun NotepadApp(
                         MobileBottomBar(
                             palette = palette,
                             compareEnabled = snapshot.documents.size > 1,
-                            onOpen = { showDocuments = !showDocuments },
-                            onFind = { showFind = !showFind },
-                            onCompare = { showCompare = !showCompare },
-                            onMore = { showMore = !showMore },
+                            onOpen = ::toggleDocumentsPanel,
+                            onFind = ::toggleFindPanel,
+                            onCompare = ::toggleComparePanel,
+                            onToggleLayoutMode = ::toggleLayoutMode,
+                            onMore = ::toggleMorePanel,
                             onNew = store::createBlank,
                         )
                     }
@@ -444,56 +517,313 @@ private fun WindowBar(
     palette: Palette,
     layoutMode: EditorLayoutMode,
     compareEnabled: Boolean,
-    onTitleChange: (String) -> Unit,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    readOnly: Boolean,
     onCycleTheme: () -> Unit,
     onOpen: () -> Unit,
     onFind: () -> Unit,
     onCompare: () -> Unit,
     onMore: () -> Unit,
     onNew: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onGotoLine: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDuplicateLine: () -> Unit,
+    onDeleteLine: () -> Unit,
+    onTrim: () -> Unit,
+    onSort: () -> Unit,
+    onToggleLayoutMode: () -> Unit,
     onCloseApp: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "Notepad 3++",
-                color = palette.foreground.toColor(),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            if (layoutMode.showClassicCloseButton) {
-                CommandButton(text = "X", palette = palette, onClick = onCloseApp)
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = document.title,
-                onValueChange = onTitleChange,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.titleMedium.copy(color = palette.foreground.toColor()),
-            )
-            CommandButton(text = "Theme", palette = palette, onClick = onCycleTheme)
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(if (layoutMode == EditorLayoutMode.CLASSIC) 3.dp else 6.dp)) {
         if (layoutMode == EditorLayoutMode.CLASSIC) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                CommandButton(text = "Open", palette = palette, modifier = Modifier.weight(1f), onClick = onOpen)
-                CommandButton(text = "Find", palette = palette, modifier = Modifier.weight(1f), onClick = onFind)
-                CommandButton(text = "Compare", palette = palette, enabled = compareEnabled, modifier = Modifier.weight(1f), onClick = onCompare)
-                CommandButton(text = "More", palette = palette, modifier = Modifier.weight(1f), onClick = onMore)
-                CommandButton(text = "New", palette = palette, primary = true, modifier = Modifier.weight(1f), onClick = onNew)
-            }
+            ClassicCaptionBar(document = document, palette = palette, onCloseApp = onCloseApp)
+            ClassicMenuBar(
+                palette = palette,
+                onOpen = onOpen,
+                onFind = onFind,
+                onMore = onMore,
+                onCycleTheme = onCycleTheme,
+                onToggleLayoutMode = onToggleLayoutMode,
+            )
+            ClassicToolRack(
+                palette = palette,
+                compareEnabled = compareEnabled,
+                canUndo = canUndo,
+                canRedo = canRedo,
+                readOnly = readOnly,
+                onNew = onNew,
+                onOpen = onOpen,
+                onFind = onFind,
+                onCompare = onCompare,
+                onMore = onMore,
+                onCycleTheme = onCycleTheme,
+                onUndo = onUndo,
+                onRedo = onRedo,
+                onGotoLine = onGotoLine,
+                onSelectAll = onSelectAll,
+                onDuplicateLine = onDuplicateLine,
+                onDeleteLine = onDeleteLine,
+                onTrim = onTrim,
+                onSort = onSort,
+            )
+        } else {
+            MobileTitleBar(
+                document = document,
+                palette = palette,
+                onNew = onNew,
+                onFind = onFind,
+                onCycleTheme = onCycleTheme,
+                onMore = onMore,
+            )
         }
     }
+}
+
+@Composable
+private fun MobileTitleBar(
+    document: TextDocument,
+    palette: Palette,
+    onNew: () -> Unit,
+    onFind: () -> Unit,
+    onCycleTheme: () -> Unit,
+    onMore: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(42.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = document.title,
+            color = palette.foreground.toColor(),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            overflow = TextOverflow.Ellipsis,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        ToolbarGlyph(label = "New", glyph = "+", palette = palette, onClick = onNew)
+        ToolbarGlyph(label = "Find", glyph = "Find", palette = palette, onClick = onFind)
+        ToolbarGlyph(label = "Theme", glyph = "Theme", palette = palette, onClick = onCycleTheme)
+        ToolbarGlyph(label = "More", glyph = "More", palette = palette, onClick = onMore)
+    }
+}
+
+@Composable
+private fun ClassicCaptionBar(
+    document: TextDocument,
+    palette: Palette,
+    onCloseApp: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(palette.titleGradientStart.toColor(), palette.titleGradientEnd.toColor()),
+                ),
+                RoundedCornerShape(topStart = palette.radius.dp, topEnd = palette.radius.dp),
+            )
+            .border(
+                1.dp,
+                palette.border.toColor(),
+                RoundedCornerShape(topStart = palette.radius.dp, topEnd = palette.radius.dp),
+            )
+            .padding(start = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "${document.title} - Notepad 3++",
+            color = palette.primaryForeground.toColor(),
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
+            overflow = TextOverflow.Ellipsis,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        CommandButton(
+            text = "X",
+            palette = palette,
+            modifier = Modifier.size(width = 32.dp, height = 20.dp),
+            onClick = onCloseApp,
+        )
+    }
+}
+
+@Composable
+private fun ClassicMenuBar(
+    palette: Palette,
+    onOpen: () -> Unit,
+    onFind: () -> Unit,
+    onMore: () -> Unit,
+    onCycleTheme: () -> Unit,
+    onToggleLayoutMode: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(palette.chromeGradientStart.toColor(), palette.chromeGradientEnd.toColor()),
+                ),
+            )
+            .border(1.dp, palette.border.toColor())
+            .padding(horizontal = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MenuWord("File", palette, onOpen)
+        MenuWord("Edit", palette, onMore)
+        MenuWord("View", palette, onCycleTheme)
+        MenuWord("Tools", palette, onMore)
+        MenuWord("Help", palette, onFind)
+        Spacer(Modifier.weight(1f))
+        Text(
+            "Mobile",
+            color = palette.mutedForeground.toColor(),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.clickable(onClick = onToggleLayoutMode),
+        )
+    }
+}
+
+@Composable
+private fun MenuWord(text: String, palette: Palette, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = palette.foreground.toColor(),
+        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun ClassicToolRack(
+    palette: Palette,
+    compareEnabled: Boolean,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    readOnly: Boolean,
+    onNew: () -> Unit,
+    onOpen: () -> Unit,
+    onFind: () -> Unit,
+    onCompare: () -> Unit,
+    onMore: () -> Unit,
+    onCycleTheme: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onGotoLine: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDuplicateLine: () -> Unit,
+    onDeleteLine: () -> Unit,
+    onTrim: () -> Unit,
+    onSort: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(palette.chromeGradientStart.toColor(), palette.chromeGradientEnd.toColor()),
+                ),
+            )
+            .border(1.dp, palette.border.toColor()),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolbarGlyph(label = "New", glyph = "+", palette = palette, onClick = onNew)
+            ToolbarGlyph(label = "Open", glyph = "[]", palette = palette, onClick = onOpen)
+            ToolbarDivider(palette)
+            ToolbarGlyph(label = "Undo", glyph = "Undo", palette = palette, enabled = canUndo, onClick = onUndo)
+            ToolbarGlyph(label = "Redo", glyph = "Redo", palette = palette, enabled = canRedo, onClick = onRedo)
+            ToolbarDivider(palette)
+            ToolbarGlyph(label = "Find", glyph = "Find", palette = palette, onClick = onFind)
+            ToolbarGlyph(label = "Compare", glyph = "==", palette = palette, enabled = compareEnabled, onClick = onCompare)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 4.dp, end = 4.dp, bottom = 3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolbarGlyph(label = "Select", glyph = "Select", palette = palette, onClick = onSelectAll)
+            ToolbarGlyph(label = "Dup line", glyph = "Dup", palette = palette, enabled = !readOnly, onClick = onDuplicateLine)
+            ToolbarGlyph(label = "Del line", glyph = "Del", palette = palette, enabled = !readOnly, onClick = onDeleteLine)
+            ToolbarDivider(palette)
+            ToolbarGlyph(label = "Goto", glyph = "Goto", palette = palette, onClick = onGotoLine)
+            ToolbarGlyph(label = "Trim", glyph = "Trim", palette = palette, enabled = !readOnly, onClick = onTrim)
+            ToolbarGlyph(label = "Sort", glyph = "Sort", palette = palette, enabled = !readOnly, onClick = onSort)
+            ToolbarDivider(palette)
+            ToolbarGlyph(label = "Theme", glyph = "Theme", palette = palette, onClick = onCycleTheme)
+            ToolbarGlyph(label = "More", glyph = "...", palette = palette, onClick = onMore)
+        }
+    }
+}
+
+@Composable
+private fun ToolbarGlyph(
+    label: String,
+    glyph: String,
+    palette: Palette,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val foreground = if (enabled) palette.foreground.toColor() else palette.mutedForeground.toColor()
+    val border = if (enabled) palette.border.toColor() else palette.secondary.toColor()
+    val shape = RoundedCornerShape((palette.radius.coerceAtMost(3)).dp)
+    val labelText = label.ifBlank { glyph }
+    Column(
+        modifier = modifier
+            .defaultMinSize(minWidth = 50.dp, minHeight = 0.dp)
+            .height(26.dp)
+            .background(
+                Brush.verticalGradient(
+                    if (enabled) {
+                        listOf(palette.card.toColor(), palette.chromeGradientEnd.toColor())
+                    } else {
+                        listOf(palette.muted.toColor(), palette.secondary.toColor())
+                    },
+                ),
+                shape,
+            )
+            .border(1.dp, border, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = labelText,
+            color = foreground,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 10.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ToolbarDivider(palette: Palette) {
+    Spacer(
+        Modifier
+            .size(width = 1.dp, height = 22.dp)
+            .background(palette.border.toColor()),
+    )
 }
 
 @Composable
@@ -502,25 +832,55 @@ private fun DocumentStrip(
     activeId: String,
     palette: Palette,
     onSelect: (String) -> Unit,
+    onClose: (String) -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         documents.forEach { document ->
             val active = document.id == activeId
-            OutlinedButton(
-                onClick = { onSelect(document.id) },
-                border = BorderStroke(1.dp, if (active) palette.primary.toColor() else palette.border.toColor()),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (active) palette.muted.toColor() else palette.card.toColor(),
-                    contentColor = palette.foreground.toColor(),
-                ),
-                shape = RoundedCornerShape(palette.radius.dp),
+            Row(
+                modifier = Modifier
+                    .height(30.dp)
+                    .widthIn(min = 126.dp, max = 240.dp)
+                    .background(
+                        if (active) {
+                            Brush.verticalGradient(listOf(palette.titleGradientStart.toColor(), palette.titleGradientEnd.toColor()))
+                        } else {
+                            Brush.verticalGradient(listOf(palette.card.toColor(), palette.muted.toColor()))
+                        },
+                        RoundedCornerShape(palette.radius.dp),
+                    )
+                    .border(
+                        1.dp,
+                        if (active) palette.primary.toColor() else palette.border.toColor(),
+                        RoundedCornerShape(palette.radius.dp),
+                    )
+                    .clickable { onSelect(document.id) }
+                    .padding(horizontal = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(document.title)
+                Text(
+                    text = document.title,
+                    color = if (active) palette.primaryForeground.toColor() else palette.foreground.toColor(),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (documents.size > 1) {
+                    Text(
+                        text = "X",
+                        color = if (active) palette.primaryForeground.toColor() else palette.mutedForeground.toColor(),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.clickable { onClose(document.id) },
+                    )
+                }
             }
         }
     }
@@ -1047,6 +1407,13 @@ private fun MorePanel(
 private class EditorEditText(context: android.content.Context) : EditText(context) {
     var editableKeyListener: KeyListener? = null
     var selectionChangedCallback: ((TextSelection) -> Unit)? = null
+    var showLineNumbers: Boolean = true
+        set(value) {
+            field = value
+            syncGutterPadding()
+            invalidate()
+        }
+    private var gutterReady = false
     private val lineBounds = Rect()
     private val gutterBackgroundPaint = Paint()
     private val gutterDividerPaint = Paint()
@@ -1059,7 +1426,12 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
     private var textPaddingBottomPx = 18
     private var gutterSidePaddingPx = 10
 
-    fun configureGutter(palette: Palette) {
+    init {
+        gutterReady = true
+    }
+
+    fun configureGutter(palette: Palette, showLineNumbers: Boolean) {
+        this.showLineNumbers = showLineNumbers
         gutterBackgroundPaint.color = AndroidColor.parseColor(palette.muted)
         gutterDividerPaint.color = AndroidColor.parseColor(palette.border)
         gutterDividerPaint.strokeWidth = 1f
@@ -1096,6 +1468,7 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
     }
 
     private fun drawLineNumberGutter(canvas: Canvas) {
+        if (!gutterReady || !showLineNumbers) return
         val body = text?.toString().orEmpty()
         val gutterWidth = gutterWidthPx(body)
         val left = scrollX.toFloat()
@@ -1125,12 +1498,17 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
     }
 
     private fun syncGutterPadding() {
-        val left = EditorGutter.totalLeftPaddingPx(
-            lineCount = EditorGutter.visibleLineCount(text?.toString().orEmpty()),
-            digitWidthPx = lineNumberPaint.measureText("0"),
-            sidePaddingPx = gutterSidePaddingPx,
-            textPaddingPx = textPaddingLeftPx,
-        )
+        if (!gutterReady) return
+        val left = if (showLineNumbers) {
+            EditorGutter.totalLeftPaddingPx(
+                lineCount = EditorGutter.visibleLineCount(text?.toString().orEmpty()),
+                digitWidthPx = lineNumberPaint.measureText("0"),
+                sidePaddingPx = gutterSidePaddingPx,
+                textPaddingPx = textPaddingLeftPx,
+            )
+        } else {
+            textPaddingLeftPx
+        }
         if (
             paddingLeft != left ||
             paddingTop != textPaddingTopPx ||
@@ -1155,6 +1533,7 @@ private fun EditorTextArea(
     palette: Palette,
     selection: TextSelection,
     readOnly: Boolean,
+    showLineNumbers: Boolean,
     onSelectionChange: (TextSelection) -> Unit,
     onBodyChange: (String, TextSelection) -> Unit,
     modifier: Modifier = Modifier,
@@ -1181,7 +1560,7 @@ private fun EditorTextArea(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 setHorizontallyScrolling(false)
                 setEditorContentPadding(18, 18, 18, 18)
-                configureGutter(palette)
+                configureGutter(palette, showLineNumbers)
                 setText(document.body)
                 addTextChangedListener(object : TextWatcher {
                     private var pendingSelection: TextSelection? = null
@@ -1222,7 +1601,7 @@ private fun EditorTextArea(
             }
             editText.setTextColor(palette.foreground.toColor().toArgb())
             editText.setBackgroundColor(palette.editorBackground.toColor().toArgb())
-            editText.configureGutter(palette)
+            editText.configureGutter(palette, showLineNumbers)
             if (bodyChangedExternally) {
                 editText.setText(document.body)
             }
@@ -1248,10 +1627,11 @@ private fun StatusBar(document: TextDocument, selection: TextSelection, readOnly
             readOnly = readOnly,
         ),
         color = palette.mutedForeground.toColor(),
+        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
         modifier = Modifier
             .fillMaxWidth()
             .background(palette.muted.toColor(), RoundedCornerShape(palette.radius.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
     )
 }
 
@@ -1262,34 +1642,30 @@ private fun MobileBottomBar(
     onOpen: () -> Unit,
     onFind: () -> Unit,
     onCompare: () -> Unit,
+    onToggleLayoutMode: () -> Unit,
     onMore: () -> Unit,
     onNew: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            CommandButton(text = "Open", palette = palette, modifier = Modifier.weight(1f), onClick = onOpen)
-            CommandButton(text = "Find", palette = palette, modifier = Modifier.weight(1f), onClick = onFind)
-            CommandButton(
-                text = "Compare",
-                palette = palette,
-                modifier = Modifier.weight(1f),
-                enabled = compareEnabled,
-                onClick = onCompare,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(palette.chromeGradientStart.toColor(), palette.chromeGradientEnd.toColor()),
+                ),
             )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            CommandButton(text = "More", palette = palette, modifier = Modifier.weight(1f), onClick = onMore)
-            CommandButton(text = "New", palette = palette, primary = true, modifier = Modifier.weight(1f), onClick = onNew)
-        }
+            .border(1.dp, palette.border.toColor())
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ToolbarGlyph(label = "File", glyph = "[]", palette = palette, modifier = Modifier.weight(1f), onClick = onOpen)
+        ToolbarGlyph(label = "Find", glyph = "Q", palette = palette, modifier = Modifier.weight(1f), onClick = onFind)
+        ToolbarGlyph(label = "Compare", glyph = "==", palette = palette, enabled = compareEnabled, modifier = Modifier.weight(1f), onClick = onCompare)
+        ToolbarGlyph(label = "Classic", glyph = "W7", palette = palette, modifier = Modifier.weight(1f), onClick = onToggleLayoutMode)
+        ToolbarGlyph(label = "More", glyph = "...", palette = palette, modifier = Modifier.weight(1f), onClick = onMore)
+        ToolbarGlyph(label = "New", glyph = "+", palette = palette, modifier = Modifier.weight(1f), onClick = onNew)
     }
 }
 
@@ -1307,6 +1683,7 @@ private fun CommandButton(
     Button(
         onClick = onClick,
         enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
             contentColor = content,
@@ -1314,9 +1691,17 @@ private fun CommandButton(
             disabledContentColor = palette.mutedForeground.toColor(),
         ),
         shape = RoundedCornerShape(palette.radius.dp),
-        modifier = modifier,
+        modifier = modifier
+            .defaultMinSize(minWidth = 0.dp, minHeight = 0.dp)
+            .heightIn(min = 30.dp),
     ) {
-        Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
