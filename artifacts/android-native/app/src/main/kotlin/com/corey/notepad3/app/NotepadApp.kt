@@ -3096,7 +3096,7 @@ private fun AccessoryStaticCluster(
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            AccessoryClusterButton(Icons.Filled.KeyboardCapslock, "Shift", palette, active = shiftActive, modifier = Modifier.weight(1f), onClick = onShiftToggle)
+            AccessoryClusterTextButton("Shift", palette, active = shiftActive, modifier = Modifier.weight(1f), onClick = onShiftToggle)
             AccessoryClusterButton(Icons.Filled.KeyboardArrowUp, "Up", palette, modifier = Modifier.weight(1f), onClick = onMoveUp)
             AccessoryClusterButton(Icons.AutoMirrored.Filled.Backspace, "Delete", palette, enabled = !readOnly, modifier = Modifier.weight(1f), onClick = onDeleteBackward)
         }
@@ -3110,6 +3110,38 @@ private fun AccessoryStaticCluster(
             AccessoryClusterButton(Icons.Filled.KeyboardArrowDown, "Down", palette, modifier = Modifier.weight(1f), onClick = onMoveDown)
             AccessoryClusterButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Right", palette, modifier = Modifier.weight(1f), onClick = onMoveRight)
         }
+    }
+}
+
+@Composable
+private fun AccessoryClusterTextButton(
+    label: String,
+    palette: Palette,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    active: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val color = when {
+        !enabled -> palette.mutedForeground.toColor().copy(alpha = 0.42f)
+        active -> palette.primary.toColor()
+        else -> palette.foreground.toColor()
+    }
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(if (active) palette.muted.toColor() else Color.Transparent, RoundedCornerShape(3.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+        )
     }
 }
 
