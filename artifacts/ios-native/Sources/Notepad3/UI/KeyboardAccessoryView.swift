@@ -2,7 +2,7 @@ import UIKit
 
 /// Input accessory bar that sits above the software keyboard. Mirrors the
 /// RN toolbar: Hide, Read, Undo, Redo, Cut, Copy, Paste, Word, Line, All,
-/// ← ↑ ↓ →, Find, Replace, Date, Open, Compare, More. Buttons live in a
+/// ← ↑ ↓ →, Find, Date, Open, Compare, More. Buttons live in a
 /// horizontal scroll view; when `rows == .double` the items are split
 /// across two stacked scroll views for a chunkier, less scrolly layout.
 ///
@@ -21,7 +21,7 @@ final class KeyboardAccessoryView: UIView {
         didSet { if rows != oldValue { rebuildLayout() } }
     }
     var buttonSize: AccessoryToolbarButtonSize = .medium {
-        didSet { applyDisplayOptionsToButtons() }
+        didSet { if buttonSize != oldValue { rebuildLayout() } }
     }
     var accessoryContentMode: AccessoryToolbarContentMode = .iconAndText {
         didSet { applyDisplayOptionsToButtons() }
@@ -47,9 +47,6 @@ final class KeyboardAccessoryView: UIView {
     var findActive: Bool = false {
         didSet { findButton?.isActive = findActive; applyPaletteToButtons() }
     }
-    var replaceActive: Bool = false {
-        didSet { replaceButton?.isActive = replaceActive; applyPaletteToButtons() }
-    }
     var compareActive: Bool = false {
         didSet { compareButton?.isActive = compareActive; applyPaletteToButtons() }
     }
@@ -57,6 +54,8 @@ final class KeyboardAccessoryView: UIView {
         didSet {
             clusterShift.isActive = shiftActive
             clusterShift.setSymbol(shiftActive ? "shift.fill" : "shift")
+            shiftButton?.isActive = shiftActive
+            shiftButton?.setSymbol(shiftActive ? "shift.fill" : "shift")
             applyPaletteToButtons()
         }
     }
@@ -77,7 +76,6 @@ final class KeyboardAccessoryView: UIView {
     var onArrow: ((Arrow) -> Void)?
     var onDelete: (() -> Void)?
     var onFind: (() -> Void)?
-    var onReplace: (() -> Void)?
     var onInsertDate: (() -> Void)?
     var onOpenDocs: (() -> Void)?
     var onCompare: (() -> Void)?
@@ -116,7 +114,7 @@ final class KeyboardAccessoryView: UIView {
     private weak var redoButton: KbButton?
     private weak var cutButton: KbButton?
     private weak var findButton: KbButton?
-    private weak var replaceButton: KbButton?
+    private weak var shiftButton: KbButton?
     private weak var compareButton: KbButton?
 
     private var allButtons: [KbButton] = []
@@ -264,10 +262,12 @@ final class KeyboardAccessoryView: UIView {
 
     // MARK: - Intrinsic size
 
+    var preferredHeight: CGFloat { intrinsicContentSize.height }
+
     override var intrinsicContentSize: CGSize {
-        // Bar is always 88pt tall — the static cluster on the leading edge
-        // is a 2-row D-pad regardless of how the scrolling part is split.
-        CGSize(width: UIView.noIntrinsicMetric, height: 88)
+        // The static cluster is two rows tall even when the scrolling toolbar
+        // is single-row. Grow for Large buttons so controls do not clip.
+        CGSize(width: UIView.noIntrinsicMetric, height: max(88, accessoryRowHeight * 2))
     }
 
     // MARK: - Layout
@@ -284,7 +284,7 @@ final class KeyboardAccessoryView: UIView {
         allButtons.removeAll()
         allSeparators.removeAll()
         readButton = nil; undoButton = nil; redoButton = nil; cutButton = nil
-        findButton = nil; replaceButton = nil; compareButton = nil
+        findButton = nil; shiftButton = nil; compareButton = nil
 
         // Build the full ordered list of items.
         let items = makeItems()
@@ -293,6 +293,7 @@ final class KeyboardAccessoryView: UIView {
         // Scrolling part starts after the cluster + divider.
         let scrollLeading = clusterDivider.trailingAnchor
 
+        let rowHeight = accessoryRowHeight
         if rows == .double {
             let half = Int((Double(items.count) / 2.0).rounded(.up))
             let top = Array(items.prefix(half))
@@ -307,7 +308,7 @@ final class KeyboardAccessoryView: UIView {
                 topScroll.topAnchor.constraint(equalTo: topAnchor),
                 topScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
                 topScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-                topScroll.heightAnchor.constraint(equalToConstant: 44),
+                topScroll.heightAnchor.constraint(equalToConstant: rowHeight),
 
                 middleBorder.topAnchor.constraint(equalTo: topScroll.bottomAnchor),
                 middleBorder.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
@@ -336,11 +337,11 @@ final class KeyboardAccessoryView: UIView {
             bottomScroll.isHidden = true
             middleBorder.isHidden = true
 
-            // Single-row scrolling part is 44pt tall, vertically centered
-            // next to the 88pt cluster, leaving the other 44pt empty.
+            // Single-row scrolling part is vertically centered next to the
+            // two-row cluster, leaving the other half empty.
             activeConstraints = [
                 topScroll.centerYAnchor.constraint(equalTo: centerYAnchor),
-                topScroll.heightAnchor.constraint(equalToConstant: 44),
+                topScroll.heightAnchor.constraint(equalToConstant: rowHeight),
                 topScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
                 topScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
 
@@ -355,6 +356,14 @@ final class KeyboardAccessoryView: UIView {
         invalidateIntrinsicContentSize()
         applyDisplayOptionsToButtons()
         applyPaletteToButtons()
+    }
+
+    private var accessoryRowHeight: CGFloat {
+        switch buttonSize {
+        case .small: return 40
+        case .medium: return 44
+        case .large: return 52
+        }
     }
 
     private func install(items: [Item], into stack: UIStackView) {
@@ -412,9 +421,6 @@ final class KeyboardAccessoryView: UIView {
         let find = KbButton(symbol: "magnifyingglass", label: "Find") { [weak self] in self?.onFind?() }
         find.isActive = findActive
         findButton = find
-        let replace = KbButton(symbol: "arrow.triangle.2.circlepath", label: "Replace") { [weak self] in self?.onReplace?() }
-        replace.isActive = replaceActive
-        replaceButton = replace
 
         let date = KbButton(symbol: "clock", label: "Date") { [weak self] in self?.onInsertDate?() }
         let open = KbButton(symbol: "folder", label: "Open") { [weak self] in self?.onOpenDocs?() }
@@ -425,6 +431,7 @@ final class KeyboardAccessoryView: UIView {
 
         let shift = KbButton(symbol: shiftActive ? "shift.fill" : "shift", label: "Shift") { [weak self] in self?.onShiftToggle?() }
         shift.isActive = shiftActive
+        shiftButton = shift
         let up = KbHoldButton(symbol: "arrow.up", label: "Up") { [weak self] in self?.onArrow?(.up) }
         let delete = KbHoldButton(symbol: "delete.left", label: "Delete") { [weak self] in self?.onDelete?() }
         let left = KbHoldButton(symbol: "arrow.left", label: "Left") { [weak self] in self?.onArrow?(.left) }
@@ -458,7 +465,7 @@ final class KeyboardAccessoryView: UIView {
         appendGroup([buttonItem(.cut, cut), buttonItem(.copy, copy), buttonItem(.paste, paste)])
         appendGroup([buttonItem(.selectWord, word), buttonItem(.selectLine, line), buttonItem(.selectAll, all)])
         appendGroup([buttonItem(.undo, undo), buttonItem(.redo, redo)])
-        appendGroup([buttonItem(.readMode, read), buttonItem(.find, find), buttonItem(.replace, replace)])
+        appendGroup([buttonItem(.readMode, read), buttonItem(.find, find)])
         appendGroup([
             buttonItem(.insertDate, date),
             buttonItem(.openDocuments, open),

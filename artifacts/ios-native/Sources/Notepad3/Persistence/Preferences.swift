@@ -48,7 +48,6 @@ enum AccessoryToolbarButton: String, Codable, CaseIterable {
     case redo
     case readMode = "read_mode"
     case find
-    case replace
     case insertDate = "insert_date"
     case openDocuments = "open_documents"
     case compare
@@ -73,7 +72,6 @@ enum AccessoryToolbarButton: String, Codable, CaseIterable {
         case .redo: return "Redo"
         case .readMode: return "Read"
         case .find: return "Find"
-        case .replace: return "Replace"
         case .insertDate: return "Date"
         case .openDocuments: return "Open"
         case .compare: return "Compare"

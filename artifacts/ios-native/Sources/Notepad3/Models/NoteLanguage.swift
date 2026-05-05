@@ -21,6 +21,7 @@ enum NoteLanguage: String, Codable, CaseIterable {
         .json,
         .html,
         .css,
+        .web,
         .javaScript,
         .kotlin,
         .swift,

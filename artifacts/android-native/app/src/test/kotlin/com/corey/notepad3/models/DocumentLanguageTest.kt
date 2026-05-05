@@ -33,4 +33,9 @@ class DocumentLanguageTest {
         assertEquals(null, DocumentLanguage.CSS.lineCommentPrefix)
         assertEquals(null, DocumentLanguage.PLAIN.lineCommentPrefix)
     }
+
+    @Test
+    fun exposesManualWebSyntaxMode() {
+        assertEquals(true, DocumentLanguage.selectableLanguages.contains(DocumentLanguage.WEB))
+    }
 }

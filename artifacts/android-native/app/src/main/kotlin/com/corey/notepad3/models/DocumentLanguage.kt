@@ -54,6 +54,7 @@ enum class DocumentLanguage(
             JSON,
             HTML,
             CSS,
+            WEB,
             JAVA_SCRIPT,
             KOTLIN,
             SWIFT,

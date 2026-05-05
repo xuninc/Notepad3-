@@ -367,12 +367,12 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private func configureKeyboardAccessory() {
         let accessory = keyboardAccessory
         accessory.autoresizingMask = [.flexibleWidth]
-        accessory.frame = CGRect(x: 0, y: 0, width: 320, height: 44)
         accessory.rows = prefs.accessoryRows == .double ? .double : .single
         accessory.buttonSize = prefs.accessoryToolbarButtonSize
         accessory.accessoryContentMode = prefs.accessoryToolbarContentMode
         accessory.staticButtons = prefs.staticAccessoryButtons
         accessory.hiddenButtons = prefs.hiddenAccessoryButtons
+        accessory.frame = CGRect(x: 0, y: 0, width: 320, height: accessory.preferredHeight)
         accessory.onHide = { [weak self] in self?.textView.resignFirstResponder() }
         accessory.onReadToggle = { [weak self] in self?.readMode.toggle() }
         accessory.onUndo = { [weak self] in self?.textView.undoManager?.undo() }
@@ -387,7 +387,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         accessory.onShiftToggle = { [weak self] in self?.toggleShift() }
         accessory.onDelete = { [weak self] in self?.deleteBackwardFromCaret() }
         accessory.onFind = { [weak self] in self?.toggleFind() }
-        accessory.onReplace = { [weak self] in self?.toggleFind(showReplace: true) }
         accessory.onInsertDate = { [weak self] in self?.insertText(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)) }
         accessory.onOpenDocs = { [weak self] in self?.presentDocsList() }
         accessory.onCompare = { [weak self] in self?.presentCompare() }
@@ -749,6 +748,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         keyboardAccessory.accessoryContentMode = prefs.accessoryToolbarContentMode
         keyboardAccessory.staticButtons = prefs.staticAccessoryButtons
         keyboardAccessory.hiddenButtons = prefs.hiddenAccessoryButtons
+        keyboardAccessory.frame.size.height = keyboardAccessory.preferredHeight
         textView.reloadInputViews()
         // Custom palette may have changed
         applyPalette()
@@ -860,7 +860,6 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             findBar.replaceField.resignFirstResponder()
         }
         keyboardAccessory.findActive = visible && !findBar.showsReplace
-        keyboardAccessory.replaceActive = visible && findBar.showsReplace
     }
 
     private func findNext(backwards: Bool) {
