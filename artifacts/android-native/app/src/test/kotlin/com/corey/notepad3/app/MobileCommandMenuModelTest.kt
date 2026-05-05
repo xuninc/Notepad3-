@@ -111,7 +111,7 @@ class MobileCommandMenuModelTest {
     @Test
     fun keyboardAccessoryUsesPagedDeckLikeDesktopKeyboardRows() {
         assertEquals(
-            listOf("Tabs", "esc", "shift", "ctrl", "alt", "enter"),
+            listOf("Windows", "esc", "shift", "ctrl", "alt", "Switch"),
             accessoryDeckModifierStrip().map { it.label },
         )
         assertEquals(
@@ -122,7 +122,7 @@ class MobileCommandMenuModelTest {
         assertEquals(3, accessoryDeckColumnCount(AccessoryDeckPage.NAVIGATION))
         assertEquals(4, accessoryDeckColumnCount(AccessoryDeckPage.NUMERIC))
         assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.EDIT))
-        assertEquals(3, accessoryDeckRowCount(AccessoryDeckPage.NAVIGATION))
+        assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.NAVIGATION))
         assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.NUMERIC))
         assertEquals(
             listOf("Copy", "Cut", "Paste", "•••"),
@@ -137,7 +137,7 @@ class MobileCommandMenuModelTest {
             accessoryDeckKeys(AccessoryDeckPage.EDIT).map { it.label },
         )
         assertEquals(
-            listOf("Home", "Up", "Pg Up", "End", "Down", "Pg Dn", "Left", "Right", "Tab"),
+            listOf("prt scn", "scr lk", "break", "Home", "Insert", "Pg Up", "End", "Up", "Pg Dn", "Left", "Down", "Right"),
             accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).map { it.label },
         )
         assertEquals(

@@ -66,7 +66,11 @@ internal enum class AccessoryDeckActionId {
     COMPARE,
     MORE,
     HIDE_KEYBOARD,
+    PRINT_SCREEN,
+    SCROLL_LOCK,
+    BREAK,
     HOME,
+    INSERT,
     END,
     PAGE_UP,
     PAGE_DOWN,
@@ -74,6 +78,7 @@ internal enum class AccessoryDeckActionId {
     MOVE_UP,
     MOVE_DOWN,
     MOVE_RIGHT,
+    SWITCH_DECK,
     TAB,
     INSERT_TEXT,
 }
@@ -123,18 +128,18 @@ internal fun accessoryDeckColumnCount(page: AccessoryDeckPage): Int =
 internal fun accessoryDeckRowCount(page: AccessoryDeckPage): Int =
     when (page) {
         AccessoryDeckPage.EDIT -> 4
-        AccessoryDeckPage.NAVIGATION -> 3
+        AccessoryDeckPage.NAVIGATION -> 4
         AccessoryDeckPage.NUMERIC -> 4
     }
 
 internal fun accessoryDeckModifierStrip(): List<AccessoryDeckKeySpec> =
     listOf(
-        AccessoryDeckKeySpec(AccessoryDeckActionId.OPEN_DOCUMENTS, "Tabs"),
+        AccessoryDeckKeySpec(AccessoryDeckActionId.OPEN_DOCUMENTS, "Windows"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.ESCAPE, "esc"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.SHIFT, "shift"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.CTRL, "ctrl"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.ALT, "alt"),
-        AccessoryDeckKeySpec(AccessoryDeckActionId.ENTER, "enter", insertText = "\n"),
+        AccessoryDeckKeySpec(AccessoryDeckActionId.SWITCH_DECK, "Switch"),
     )
 
 internal fun accessoryDeckLeftRail(): List<AccessoryDeckKeySpec> =
@@ -168,15 +173,18 @@ internal fun accessoryDeckKeys(page: AccessoryDeckPage): List<AccessoryDeckKeySp
             AccessoryDeckKeySpec(AccessoryDeckActionId.HIDE_KEYBOARD, "Hide"),
         )
         AccessoryDeckPage.NAVIGATION -> listOf(
+            AccessoryDeckKeySpec(AccessoryDeckActionId.PRINT_SCREEN, "prt scn"),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.SCROLL_LOCK, "scr lk"),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.BREAK, "break"),
             AccessoryDeckKeySpec(AccessoryDeckActionId.HOME, "Home", repeatOnHold = true),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_UP, "Up", repeatOnHold = true),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT, "Insert"),
             AccessoryDeckKeySpec(AccessoryDeckActionId.PAGE_UP, "Pg Up", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.END, "End", repeatOnHold = true),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_DOWN, "Down", repeatOnHold = true),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_UP, "Up", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.PAGE_DOWN, "Pg Dn", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_LEFT, "Left", repeatOnHold = true),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_DOWN, "Down", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_RIGHT, "Right", repeatOnHold = true),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.TAB, "Tab", insertText = "\t"),
         )
         AccessoryDeckPage.NUMERIC -> listOf(
             AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "/", insertText = "/"),

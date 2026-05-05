@@ -3632,11 +3632,12 @@ private fun MobileKeyboardAccessory(
             else -> false
         }
         val icon = when (spec.id) {
-            AccessoryDeckActionId.OPEN_DOCUMENTS -> Icons.AutoMirrored.Filled.List
+            AccessoryDeckActionId.OPEN_DOCUMENTS -> Icons.Filled.Apps
             AccessoryDeckActionId.COPY -> Icons.Filled.ContentCopy
             AccessoryDeckActionId.CUT -> Icons.Filled.ContentCut
             AccessoryDeckActionId.PASTE -> Icons.Filled.ContentPaste
             AccessoryDeckActionId.BACKSPACE -> Icons.AutoMirrored.Filled.Backspace
+            AccessoryDeckActionId.SWITCH_DECK -> Icons.AutoMirrored.Filled.CompareArrows
             AccessoryDeckActionId.UNDO -> Icons.AutoMirrored.Filled.Undo
             AccessoryDeckActionId.REDO -> Icons.AutoMirrored.Filled.Redo
             AccessoryDeckActionId.FIND -> Icons.Filled.Search
@@ -3648,6 +3649,10 @@ private fun MobileKeyboardAccessory(
             AccessoryDeckActionId.COMPARE -> Icons.Filled.ViewColumn
             AccessoryDeckActionId.MORE -> Icons.Filled.MoreHoriz
             AccessoryDeckActionId.HIDE_KEYBOARD -> Icons.Filled.Keyboard
+            AccessoryDeckActionId.MOVE_UP -> Icons.Filled.KeyboardArrowUp
+            AccessoryDeckActionId.MOVE_DOWN -> Icons.Filled.KeyboardArrowDown
+            AccessoryDeckActionId.MOVE_LEFT -> Icons.AutoMirrored.Filled.KeyboardArrowLeft
+            AccessoryDeckActionId.MOVE_RIGHT -> Icons.AutoMirrored.Filled.KeyboardArrowRight
             else -> null
         }
         return AccessoryDeckRenderKey(
@@ -3657,10 +3662,6 @@ private fun MobileKeyboardAccessory(
             active = active,
             labelOverride = when (spec.id) {
                 AccessoryDeckActionId.PAGE_DOTS -> deckPage.pageDotsLabel()
-                AccessoryDeckActionId.MOVE_UP -> "⌃"
-                AccessoryDeckActionId.MOVE_DOWN -> "⌄"
-                AccessoryDeckActionId.MOVE_LEFT -> "‹"
-                AccessoryDeckActionId.MOVE_RIGHT -> "›"
                 else -> null
             },
             onClick = {
@@ -3677,7 +3678,8 @@ private fun MobileKeyboardAccessory(
                     AccessoryDeckActionId.COPY -> onCopy()
                     AccessoryDeckActionId.CUT -> onCut()
                     AccessoryDeckActionId.PASTE -> onPaste()
-                    AccessoryDeckActionId.PAGE_DOTS -> showNextDeckPage()
+                    AccessoryDeckActionId.PAGE_DOTS,
+                    AccessoryDeckActionId.SWITCH_DECK -> showNextDeckPage()
                     AccessoryDeckActionId.BACKSPACE -> onDeleteBackward()
                     AccessoryDeckActionId.UNDO -> onUndo()
                     AccessoryDeckActionId.REDO -> onRedo()
@@ -3697,6 +3699,10 @@ private fun MobileKeyboardAccessory(
                     AccessoryDeckActionId.MOVE_UP -> onMoveUp()
                     AccessoryDeckActionId.MOVE_DOWN -> onMoveDown()
                     AccessoryDeckActionId.MOVE_RIGHT -> onMoveRight()
+                    AccessoryDeckActionId.PRINT_SCREEN,
+                    AccessoryDeckActionId.SCROLL_LOCK,
+                    AccessoryDeckActionId.BREAK,
+                    AccessoryDeckActionId.INSERT -> Unit
                 }
             },
         )
@@ -3737,10 +3743,13 @@ private fun MobileKeyboardAccessory(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             accessoryDeckModifierStrip().forEach { spec ->
+                val iconOnly = spec.id == AccessoryDeckActionId.OPEN_DOCUMENTS ||
+                    spec.id == AccessoryDeckActionId.SWITCH_DECK
                 AccessoryDeckKeyButton(
                     key = renderKey(spec),
                     keyHeight = stripHeight,
-                    textOnly = true,
+                    textOnly = !iconOnly,
+                    iconOnly = iconOnly,
                     textScale = 0.27f,
                     modifier = Modifier.weight(1f),
                 )
@@ -3943,7 +3952,13 @@ private fun AccessoryDeckKeyButton(
                 key.icon,
                 contentDescription = key.label,
                 tint = foreground,
-                modifier = Modifier.size((keyHeight * if (iconOnly) 0.46f else 0.42f).dp),
+                modifier = Modifier.size(
+                    (keyHeight * when {
+                        key.spec.id.isDeckArrowKey() -> 0.62f
+                        iconOnly -> 0.46f
+                        else -> 0.42f
+                    }).dp,
+                ),
             )
         } else {
             Text(
@@ -3962,6 +3977,12 @@ private fun AccessoryDeckKeyButton(
 
 private fun AccessoryDeckPage.pageDotsLabel(): String =
     accessoryDeckPages().joinToString("") { if (it == this) "●" else "•" }
+
+private fun AccessoryDeckActionId.isDeckArrowKey(): Boolean =
+    this == AccessoryDeckActionId.MOVE_UP ||
+        this == AccessoryDeckActionId.MOVE_DOWN ||
+        this == AccessoryDeckActionId.MOVE_LEFT ||
+        this == AccessoryDeckActionId.MOVE_RIGHT
 
 private data class AccessoryToolbarAction(
     val id: AccessoryToolbarButton,
