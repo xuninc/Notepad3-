@@ -83,6 +83,7 @@ internal data class AccessoryDeckKeySpec(
     val label: String,
     val insertText: String? = null,
     val repeatOnHold: Boolean = false,
+    val columnSpan: Int = 1,
 )
 
 internal data class RepeatPressSpec(
@@ -115,6 +116,16 @@ internal fun previousAccessoryDeckPage(page: AccessoryDeckPage): AccessoryDeckPa
     val previousIndex = (pages.indexOf(page) - 1).floorMod(pages.size)
     return pages[previousIndex]
 }
+
+internal fun accessoryDeckColumnCount(page: AccessoryDeckPage): Int =
+    if (page == AccessoryDeckPage.NUMERIC) 4 else 3
+
+internal fun accessoryDeckRowCount(page: AccessoryDeckPage): Int =
+    when (page) {
+        AccessoryDeckPage.EDIT -> 4
+        AccessoryDeckPage.NAVIGATION -> 3
+        AccessoryDeckPage.NUMERIC -> 4
+    }
 
 internal fun accessoryDeckModifierStrip(): List<AccessoryDeckKeySpec> =
     listOf(
@@ -181,7 +192,7 @@ internal fun accessoryDeckKeys(page: AccessoryDeckPage): List<AccessoryDeckKeySp
             AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "2", insertText = "2"),
             AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "3", insertText = "3"),
             AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "+", insertText = "+"),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "0", insertText = "0"),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "0", insertText = "0", columnSpan = 2),
             AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, ".", insertText = "."),
         )
     }

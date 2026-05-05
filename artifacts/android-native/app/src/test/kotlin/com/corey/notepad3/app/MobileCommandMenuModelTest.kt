@@ -118,6 +118,12 @@ class MobileCommandMenuModelTest {
             listOf("Edit", "Nav", "123"),
             accessoryDeckPages().map { it.title },
         )
+        assertEquals(3, accessoryDeckColumnCount(AccessoryDeckPage.EDIT))
+        assertEquals(3, accessoryDeckColumnCount(AccessoryDeckPage.NAVIGATION))
+        assertEquals(4, accessoryDeckColumnCount(AccessoryDeckPage.NUMERIC))
+        assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.EDIT))
+        assertEquals(3, accessoryDeckRowCount(AccessoryDeckPage.NAVIGATION))
+        assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.NUMERIC))
         assertEquals(
             listOf("Copy", "Cut", "Paste", "•••"),
             accessoryDeckLeftRail().map { it.label },
@@ -138,6 +144,7 @@ class MobileCommandMenuModelTest {
             listOf("/", "7", "8", "9", "*", "4", "5", "6", "-", "1", "2", "3", "+", "0", "."),
             accessoryDeckKeys(AccessoryDeckPage.NUMERIC).map { it.label },
         )
+        assertEquals(2, accessoryDeckKeys(AccessoryDeckPage.NUMERIC).first { it.label == "0" }.columnSpan)
         assertTrue(accessoryDeckRightRail().first { it.label == "Backspace" }.repeatOnHold)
         assertTrue(accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).first { it.label == "Left" }.repeatOnHold)
         assertEquals(AccessoryDeckPage.NAVIGATION, nextAccessoryDeckPage(AccessoryDeckPage.EDIT))

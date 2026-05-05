@@ -23,6 +23,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -77,6 +78,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -3578,19 +3580,28 @@ private fun MobileKeyboardAccessory(
     var ctrlActive by rememberSaveable { mutableStateOf(false) }
     var altActive by rememberSaveable { mutableStateOf(false) }
     val stripHeight = when (buttonSize) {
-        AccessoryToolbarButtonSize.SMALL -> 38
-        AccessoryToolbarButtonSize.MEDIUM -> 44
-        AccessoryToolbarButtonSize.LARGE -> 50
+        AccessoryToolbarButtonSize.SMALL -> 50
+        AccessoryToolbarButtonSize.MEDIUM -> 56
+        AccessoryToolbarButtonSize.LARGE -> 62
     }
     val keyHeight = when (buttonSize) {
-        AccessoryToolbarButtonSize.SMALL -> 38
-        AccessoryToolbarButtonSize.MEDIUM -> 46
-        AccessoryToolbarButtonSize.LARGE -> 54
+        AccessoryToolbarButtonSize.SMALL -> 58
+        AccessoryToolbarButtonSize.MEDIUM -> 66
+        AccessoryToolbarButtonSize.LARGE -> 74
     }
     val railWidth = when (buttonSize) {
-        AccessoryToolbarButtonSize.SMALL -> 56
-        AccessoryToolbarButtonSize.MEDIUM -> 68
-        AccessoryToolbarButtonSize.LARGE -> 78
+        AccessoryToolbarButtonSize.SMALL -> 54
+        AccessoryToolbarButtonSize.MEDIUM -> 62
+        AccessoryToolbarButtonSize.LARGE -> 70
+    }
+    val deckBackground = Color(0xFF373737)
+    val deckBorder = Color(0xFF4A4A4A)
+    var dragTotal by remember { mutableStateOf(0f) }
+    fun showNextDeckPage() {
+        deckPage = nextAccessoryDeckPage(deckPage)
+    }
+    fun showPreviousDeckPage() {
+        deckPage = previousAccessoryDeckPage(deckPage)
     }
 
     fun renderKey(spec: AccessoryDeckKeySpec): AccessoryDeckRenderKey {
@@ -3637,10 +3648,6 @@ private fun MobileKeyboardAccessory(
             AccessoryDeckActionId.COMPARE -> Icons.Filled.ViewColumn
             AccessoryDeckActionId.MORE -> Icons.Filled.MoreHoriz
             AccessoryDeckActionId.HIDE_KEYBOARD -> Icons.Filled.Keyboard
-            AccessoryDeckActionId.MOVE_UP -> Icons.Filled.KeyboardArrowUp
-            AccessoryDeckActionId.MOVE_DOWN -> Icons.Filled.KeyboardArrowDown
-            AccessoryDeckActionId.MOVE_LEFT -> Icons.AutoMirrored.Filled.KeyboardArrowLeft
-            AccessoryDeckActionId.MOVE_RIGHT -> Icons.AutoMirrored.Filled.KeyboardArrowRight
             else -> null
         }
         return AccessoryDeckRenderKey(
@@ -3648,6 +3655,14 @@ private fun MobileKeyboardAccessory(
             icon = icon,
             enabled = enabled,
             active = active,
+            labelOverride = when (spec.id) {
+                AccessoryDeckActionId.PAGE_DOTS -> deckPage.pageDotsLabel()
+                AccessoryDeckActionId.MOVE_UP -> "⌃"
+                AccessoryDeckActionId.MOVE_DOWN -> "⌄"
+                AccessoryDeckActionId.MOVE_LEFT -> "‹"
+                AccessoryDeckActionId.MOVE_RIGHT -> "›"
+                else -> null
+            },
             onClick = {
                 when (spec.id) {
                     AccessoryDeckActionId.OPEN_DOCUMENTS -> onOpenDocuments()
@@ -3662,7 +3677,7 @@ private fun MobileKeyboardAccessory(
                     AccessoryDeckActionId.COPY -> onCopy()
                     AccessoryDeckActionId.CUT -> onCut()
                     AccessoryDeckActionId.PASTE -> onPaste()
-                    AccessoryDeckActionId.PAGE_DOTS -> deckPage = nextAccessoryDeckPage(deckPage)
+                    AccessoryDeckActionId.PAGE_DOTS -> showNextDeckPage()
                     AccessoryDeckActionId.BACKSPACE -> onDeleteBackward()
                     AccessoryDeckActionId.UNDO -> onUndo()
                     AccessoryDeckActionId.REDO -> onRedo()
@@ -3690,17 +3705,35 @@ private fun MobileKeyboardAccessory(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height((stripHeight + keyHeight * 4 + 16).dp)
-            .background(Color(0xE0262626))
-            .border(1.dp, Color.White.copy(alpha = 0.10f))
-            .padding(horizontal = 6.dp, vertical = 5.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+            .height((stripHeight + keyHeight * 4 + 42).dp)
+            .background(deckBackground)
+            .border(2.dp, deckBorder)
+            .pointerInput(deckPage) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragTotal = 0f },
+                    onHorizontalDrag = { _, dragAmount ->
+                        dragTotal += dragAmount
+                    },
+                    onDragEnd = {
+                        when {
+                            dragTotal <= -72f -> showNextDeckPage()
+                            dragTotal >= 72f -> showPreviousDeckPage()
+                        }
+                        dragTotal = 0f
+                    },
+                    onDragCancel = {
+                        dragTotal = 0f
+                    },
+                )
+            }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(stripHeight.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             accessoryDeckModifierStrip().forEach { spec ->
@@ -3708,27 +3741,30 @@ private fun MobileKeyboardAccessory(
                     key = renderKey(spec),
                     keyHeight = stripHeight,
                     textOnly = true,
+                    textScale = 0.27f,
                     modifier = Modifier.weight(1f),
                 )
             }
         }
         Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier
                     .width(railWidth.dp)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 accessoryDeckLeftRail().forEach { spec ->
-                    val key = renderKey(spec)
                     AccessoryDeckKeyButton(
-                        key = if (spec.id == AccessoryDeckActionId.PAGE_DOTS) key.copy(labelOverride = deckPage.pageDotsLabel()) else key,
+                        key = renderKey(spec),
                         keyHeight = keyHeight,
                         modifier = Modifier.weight(1f),
+                        iconOnly = spec.id != AccessoryDeckActionId.PAGE_DOTS,
                     )
                 }
             }
@@ -3744,22 +3780,37 @@ private fun MobileKeyboardAccessory(
                 modifier = Modifier
                     .width(railWidth.dp)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val rightRail = accessoryDeckRightRail()
                 AccessoryDeckKeyButton(
                     key = renderKey(rightRail.first()),
                     keyHeight = keyHeight,
                     modifier = Modifier.weight(1f),
+                    iconOnly = true,
                 )
                 Spacer(Modifier.weight(1f))
                 AccessoryDeckKeyButton(
                     key = renderKey(rightRail.last()),
                     keyHeight = keyHeight,
                     textOnly = true,
+                    textScale = 0.28f,
                     modifier = Modifier.weight(2f),
                 )
             }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(112.dp)
+                    .height(5.dp)
+                    .background(Color.White.copy(alpha = 0.48f), RoundedCornerShape(999.dp)),
+            )
         }
     }
 }
@@ -3783,30 +3834,38 @@ private fun AccessoryDeckPageGrid(
     keyHeight: Int,
     modifier: Modifier = Modifier,
 ) {
-    val columns = if (page == AccessoryDeckPage.NUMERIC) 4 else 3
+    val columns = accessoryDeckColumnCount(page)
+    val rows = accessoryDeckRowCount(page)
     val keys = accessoryDeckKeys(page)
+    var keyIndex = 0
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        repeat(4) { rowIndex ->
+        repeat(rows) {
             Row(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                repeat(columns) { columnIndex ->
-                    val key = keys.getOrNull(rowIndex * columns + columnIndex)
+                var usedColumns = 0
+                while (usedColumns < columns) {
+                    val key = keys.getOrNull(keyIndex)
                     if (key == null) {
-                        Spacer(Modifier.weight(1f))
+                        Spacer(Modifier.weight((columns - usedColumns).toFloat()))
+                        usedColumns = columns
                     } else {
+                        val span = key.columnSpan.coerceIn(1, columns - usedColumns)
                         AccessoryDeckKeyButton(
                             key = renderKey(key),
                             keyHeight = keyHeight,
                             textOnly = page == AccessoryDeckPage.NUMERIC,
-                            modifier = Modifier.weight(1f),
+                            textScale = if (page == AccessoryDeckPage.NUMERIC) 0.38f else 0.36f,
+                            modifier = Modifier.weight(span.toFloat()),
                         )
+                        keyIndex += 1
+                        usedColumns += span
                     }
                 }
             }
@@ -3820,8 +3879,10 @@ private fun AccessoryDeckKeyButton(
     keyHeight: Int,
     modifier: Modifier = Modifier,
     textOnly: Boolean = false,
+    iconOnly: Boolean = false,
+    textScale: Float = 0.36f,
 ) {
-    val shape = RoundedCornerShape(9.dp)
+    val shape = RoundedCornerShape(14.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val latestOnClick = rememberUpdatedState(key.onClick)
@@ -3850,38 +3911,47 @@ private fun AccessoryDeckKeyButton(
         Modifier.clickable(enabled = key.enabled, onClick = key.onClick)
     }
     val foreground = when {
-        !key.enabled -> Color.White.copy(alpha = 0.28f)
-        key.active -> Color(0xFF9BC2FF)
+        !key.enabled -> Color.White.copy(alpha = 0.34f)
+        key.active -> Color.White
         else -> Color.White
     }
     val background = when {
-        key.active -> Color(0xFF384D68)
-        key.spec.id == AccessoryDeckActionId.INSERT_TEXT -> Color(0xFF121212)
-        else -> Color(0xFF3B3B3B)
+        key.active -> Color(0xFF4A4A4A)
+        key.spec.id == AccessoryDeckActionId.INSERT_TEXT -> Color(0xFF101010)
+        key.spec.id == AccessoryDeckActionId.PAGE_DOTS -> Color(0xFF343434)
+        else -> Color(0xFF383838)
+    }
+    val resolvedTextScale = when {
+        key.label.length >= 4 -> minOf(textScale, 0.28f)
+        else -> textScale
     }
     Box(
         modifier = modifier
             .heightIn(min = keyHeight.dp)
             .background(background, shape)
-            .border(1.dp, Color.White.copy(alpha = if (key.active) 0.22f else 0.06f), shape)
+            .border(
+                2.dp,
+                Color.White.copy(alpha = if (key.active) 0.18f else 0.055f),
+                shape,
+            )
             .then(pressModifier)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (key.icon != null && !textOnly) {
+        if (key.icon != null && (!textOnly || iconOnly)) {
             Icon(
                 key.icon,
                 contentDescription = key.label,
                 tint = foreground,
-                modifier = Modifier.size((keyHeight * 0.46f).dp),
+                modifier = Modifier.size((keyHeight * if (iconOnly) 0.46f else 0.42f).dp),
             )
         } else {
             Text(
                 text = key.label,
                 color = foreground,
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = (keyHeight * 0.32f).sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = (keyHeight * if (key.spec.id == AccessoryDeckActionId.PAGE_DOTS) 0.34f else resolvedTextScale).sp,
+                    fontWeight = FontWeight.SemiBold,
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
