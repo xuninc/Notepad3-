@@ -20,6 +20,18 @@ final class KeyboardAccessoryView: UIView {
     var rows: Rows = .single {
         didSet { if rows != oldValue { rebuildLayout() } }
     }
+    var buttonSize: AccessoryToolbarButtonSize = .medium {
+        didSet { applyDisplayOptionsToButtons() }
+    }
+    var accessoryContentMode: AccessoryToolbarContentMode = .iconAndText {
+        didSet { applyDisplayOptionsToButtons() }
+    }
+    var staticButtons: Set<AccessoryToolbarButton> = AccessoryToolbarButton.defaultStaticButtons {
+        didSet { rebuildLayout() }
+    }
+    var hiddenButtons: Set<AccessoryToolbarButton> = [] {
+        didSet { rebuildLayout() }
+    }
     var readMode: Bool = false {
         didSet { readButton?.setSymbol(readMode ? "eye" : "eye.slash"); readButton?.isActive = readMode; applyPaletteToButtons() }
     }
@@ -93,6 +105,8 @@ final class KeyboardAccessoryView: UIView {
     private let clusterLeft: KbHoldButton
     private let clusterDown: KbHoldButton
     private let clusterRight: KbHoldButton
+    private var clusterWidthConstraint: NSLayoutConstraint?
+    private var clusterDividerWidthConstraint: NSLayoutConstraint?
 
     private var palette: Palette = .light
 
@@ -114,11 +128,11 @@ final class KeyboardAccessoryView: UIView {
         // Cluster buttons are owned by self; built here so we can store strong
         // references that survive `rebuildLayout()` (the cluster never rebuilds).
         clusterShift  = KbButton(symbol: "shift", label: "Shift") { }
-        clusterUp     = KbHoldButton(symbol: "arrow.up")    { }
-        clusterDelete = KbHoldButton(symbol: "delete.left") { }
-        clusterLeft   = KbHoldButton(symbol: "arrow.left")  { }
-        clusterDown   = KbHoldButton(symbol: "arrow.down")  { }
-        clusterRight  = KbHoldButton(symbol: "arrow.right") { }
+        clusterUp     = KbHoldButton(symbol: "arrow.up", label: "Up") { }
+        clusterDelete = KbHoldButton(symbol: "delete.left", label: "Delete") { }
+        clusterLeft   = KbHoldButton(symbol: "arrow.left", label: "Left") { }
+        clusterDown   = KbHoldButton(symbol: "arrow.down", label: "Down") { }
+        clusterRight  = KbHoldButton(symbol: "arrow.right", label: "Right") { }
         super.init(frame: frame)
         autoresizingMask = [.flexibleWidth]
         setupBase()
@@ -170,6 +184,11 @@ final class KeyboardAccessoryView: UIView {
         clusterDivider.translatesAutoresizingMaskIntoConstraints = false
         addSubview(clusterDivider)
 
+        let clusterWidth = clusterContainer.widthAnchor.constraint(equalToConstant: 132)
+        let dividerWidth = clusterDivider.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
+        clusterWidthConstraint = clusterWidth
+        clusterDividerWidthConstraint = dividerWidth
+
         NSLayoutConstraint.activate([
             topBorder.topAnchor.constraint(equalTo: topAnchor),
             topBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -180,13 +199,13 @@ final class KeyboardAccessoryView: UIView {
             clusterContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             clusterContainer.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             clusterContainer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-            clusterContainer.widthAnchor.constraint(equalToConstant: 132),
+            clusterWidth,
 
             // Vertical divider between cluster and the scrolling part.
             clusterDivider.leadingAnchor.constraint(equalTo: clusterContainer.trailingAnchor, constant: 4),
             clusterDivider.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             clusterDivider.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            clusterDivider.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+            dividerWidth,
 
             topCluster.topAnchor.constraint(equalTo: clusterContainer.topAnchor),
             topCluster.leadingAnchor.constraint(equalTo: clusterContainer.leadingAnchor),
@@ -198,6 +217,7 @@ final class KeyboardAccessoryView: UIView {
             botCluster.trailingAnchor.constraint(equalTo: clusterContainer.trailingAnchor),
             botCluster.bottomAnchor.constraint(equalTo: clusterContainer.bottomAnchor),
         ])
+        updateStaticClusterVisibility()
     }
 
     private func wireClusterCallbacks() {
@@ -207,6 +227,39 @@ final class KeyboardAccessoryView: UIView {
         clusterLeft.tickHandler   = { [weak self] in self?.onArrow?(.left) }
         clusterDown.tickHandler   = { [weak self] in self?.onArrow?(.down) }
         clusterRight.tickHandler  = { [weak self] in self?.onArrow?(.right) }
+    }
+
+    private var staticClusterButtonIds: Set<AccessoryToolbarButton> {
+        Set(AccessoryToolbarButton.staticCandidates)
+    }
+
+    private func isPinnedToStaticCluster(_ button: AccessoryToolbarButton) -> Bool {
+        staticClusterButtonIds.contains(button) && staticButtons.contains(button) && !hiddenButtons.contains(button)
+    }
+
+    private func isAvailableInScrollingToolbar(_ button: AccessoryToolbarButton) -> Bool {
+        !hiddenButtons.contains(button) && !isPinnedToStaticCluster(button)
+    }
+
+    private func updateStaticClusterVisibility() {
+        let clusterPairs: [(AccessoryToolbarButton, UIView)] = [
+            (.shift, clusterShift),
+            (.moveUp, clusterUp),
+            (.deleteBackward, clusterDelete),
+            (.moveLeft, clusterLeft),
+            (.moveDown, clusterDown),
+            (.moveRight, clusterRight),
+        ]
+        var anyVisible = false
+        for (button, view) in clusterPairs {
+            let visible = isPinnedToStaticCluster(button)
+            view.isHidden = !visible
+            anyVisible = anyVisible || visible
+        }
+        clusterContainer.isHidden = !anyVisible
+        clusterDivider.isHidden = !anyVisible
+        clusterWidthConstraint?.constant = anyVisible ? 132 : 0
+        clusterDividerWidthConstraint?.constant = anyVisible ? (1 / UIScreen.main.scale) : 0
     }
 
     // MARK: - Intrinsic size
@@ -222,6 +275,7 @@ final class KeyboardAccessoryView: UIView {
     private var activeConstraints: [NSLayoutConstraint] = []
 
     private func rebuildLayout() {
+        updateStaticClusterVisibility()
         // Tear down existing button subviews / constraints.
         NSLayoutConstraint.deactivate(activeConstraints)
         activeConstraints.removeAll()
@@ -299,6 +353,7 @@ final class KeyboardAccessoryView: UIView {
         }
         NSLayoutConstraint.activate(activeConstraints)
         invalidateIntrinsicContentSize()
+        applyDisplayOptionsToButtons()
         applyPaletteToButtons()
     }
 
@@ -313,6 +368,7 @@ final class KeyboardAccessoryView: UIView {
                 allSeparators.append(sep)
                 stack.addArrangedSubview(sep)
             case .button(let b):
+                b.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
                 allButtons.append(b)
                 stack.addArrangedSubview(b)
             }
@@ -367,23 +423,49 @@ final class KeyboardAccessoryView: UIView {
         compareButton = compare
         let more = KbButton(symbol: "ellipsis", label: "More") { [weak self] in self?.onMore?() }
 
+        let shift = KbButton(symbol: shiftActive ? "shift.fill" : "shift", label: "Shift") { [weak self] in self?.onShiftToggle?() }
+        shift.isActive = shiftActive
+        let up = KbHoldButton(symbol: "arrow.up", label: "Up") { [weak self] in self?.onArrow?(.up) }
+        let delete = KbHoldButton(symbol: "delete.left", label: "Delete") { [weak self] in self?.onDelete?() }
+        let left = KbHoldButton(symbol: "arrow.left", label: "Left") { [weak self] in self?.onArrow?(.left) }
+        let down = KbHoldButton(symbol: "arrow.down", label: "Down") { [weak self] in self?.onArrow?(.down) }
+        let right = KbHoldButton(symbol: "arrow.right", label: "Right") { [weak self] in self?.onArrow?(.right) }
+
+        func buttonItem(_ id: AccessoryToolbarButton, _ button: KbButton) -> Item? {
+            isAvailableInScrollingToolbar(id) ? .button(button) : nil
+        }
+
+        var result: [Item] = []
+        func appendGroup(_ items: [Item?]) {
+            let visible = items.compactMap { $0 }
+            guard !visible.isEmpty else { return }
+            if !result.isEmpty { result.append(.separator) }
+            result.append(contentsOf: visible)
+        }
+
         // Arrow keys, Shift, and Delete now live in the static cluster on the
-        // leading edge, so they're omitted from the scrolling list. What's
-        // left is grouped by frequency: Hide → clipboard → selection helpers
-        // → history → mode/file/auxiliary.
-        return [
-            .button(hide),
-            .separator,
-            .button(cut), .button(copy), .button(paste),
-            .separator,
-            .button(word), .button(line), .button(all),
-            .separator,
-            .button(undo), .button(redo),
-            .separator,
-            .button(read), .button(find), .button(replace),
-            .separator,
-            .button(date), .button(open), .button(compare), .button(more),
-        ]
+        // leading edge by default. If the user unpins one, it drops back into
+        // this scrolling list instead of disappearing.
+        appendGroup([buttonItem(.hideKeyboard, hide)])
+        appendGroup([
+            buttonItem(.shift, shift),
+            buttonItem(.moveUp, up),
+            buttonItem(.deleteBackward, delete),
+            buttonItem(.moveLeft, left),
+            buttonItem(.moveDown, down),
+            buttonItem(.moveRight, right),
+        ])
+        appendGroup([buttonItem(.cut, cut), buttonItem(.copy, copy), buttonItem(.paste, paste)])
+        appendGroup([buttonItem(.selectWord, word), buttonItem(.selectLine, line), buttonItem(.selectAll, all)])
+        appendGroup([buttonItem(.undo, undo), buttonItem(.redo, redo)])
+        appendGroup([buttonItem(.readMode, read), buttonItem(.find, find), buttonItem(.replace, replace)])
+        appendGroup([
+            buttonItem(.insertDate, date),
+            buttonItem(.openDocuments, open),
+            buttonItem(.compare, compare),
+            buttonItem(.more, more),
+        ])
+        return result
     }
 
     // MARK: - Palette
@@ -395,6 +477,16 @@ final class KeyboardAccessoryView: UIView {
         middleBorder.backgroundColor = p.border
         clusterDivider.backgroundColor = p.border
         applyPaletteToButtons()
+    }
+
+    private func applyDisplayOptionsToButtons() {
+        for btn in allButtons {
+            btn.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
+        }
+        for btn in [clusterShift, clusterUp, clusterDelete, clusterLeft, clusterDown, clusterRight] {
+            btn.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
+        }
+        invalidateIntrinsicContentSize()
     }
 
     private func applyPaletteToButtons() {
@@ -425,11 +517,18 @@ private class KbButton: UIControl {
 
     private let imageView = UIImageView()
     private let titleLabel = UILabel()
+    private let contentStack = UIStackView()
+    private var minWidthConstraint: NSLayoutConstraint?
+    private var minHeightConstraint: NSLayoutConstraint?
+    private var currentSize: AccessoryToolbarButtonSize = .medium
+    private var currentContentMode: AccessoryToolbarContentMode = .iconAndText
+    private var displayedSymbolName: String
 
     init(symbol: String, label: String? = nil, onTap: @escaping () -> Void) {
         self.symbolName = symbol
         self.label = label
         self.onTap = onTap
+        self.displayedSymbolName = symbol
         super.init(frame: .zero)
         setup()
     }
@@ -443,49 +542,106 @@ private class KbButton: UIControl {
         accessibilityTraits = .button
         accessibilityLabel = label ?? symbolName
 
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.axis = .vertical
+        contentStack.alignment = .center
+        contentStack.distribution = .fill
+        contentStack.spacing = 1
+        addSubview(contentStack)
+
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFit
         imageView.image = UIImage(systemName: symbolName,
                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .regular))
-        addSubview(imageView)
+        contentStack.addArrangedSubview(imageView)
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 9, weight: .medium)
         titleLabel.textAlignment = .center
         titleLabel.numberOfLines = 1
         titleLabel.text = label
-        titleLabel.isHidden = (label == nil)
-        addSubview(titleLabel)
+        contentStack.addArrangedSubview(titleLabel)
 
-        var constraints: [NSLayoutConstraint] = [
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 34),
-            imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            imageView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            imageView.widthAnchor.constraint(equalToConstant: 20),
-            imageView.heightAnchor.constraint(equalToConstant: 20),
-            leadingAnchor.constraint(equalTo: imageView.leadingAnchor, constant: -6),
-            trailingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-        ]
-        if label == nil {
-            constraints.append(imageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4))
-        } else {
-            constraints.append(contentsOf: [
-                titleLabel.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 1),
-                titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-                titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 2),
-                titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
-                titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-            ])
-        }
-        NSLayoutConstraint.activate(constraints)
+        let minWidth = widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        let minHeight = heightAnchor.constraint(greaterThanOrEqualToConstant: 34)
+        minWidthConstraint = minWidth
+        minHeightConstraint = minHeight
+        NSLayoutConstraint.activate([
+            minWidth,
+            minHeight,
+            contentStack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 3),
+            contentStack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 4),
+            contentStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -3),
+            contentStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            contentStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
 
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
+        configureDisplay(size: .medium, contentMode: .iconAndText)
     }
 
     func setSymbol(_ name: String) {
+        displayedSymbolName = name
         imageView.image = UIImage(systemName: name,
-                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .regular))
+                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolPointSize(for: currentSize), weight: .regular))
+    }
+
+    func configureDisplay(size: AccessoryToolbarButtonSize, contentMode: AccessoryToolbarContentMode) {
+        currentSize = size
+        currentContentMode = contentMode
+        minWidthConstraint?.constant = minWidth(for: size)
+        minHeightConstraint?.constant = minHeight(for: size)
+        imageView.image = UIImage(
+            systemName: displayedSymbolName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolPointSize(for: size), weight: .regular)
+        )
+        titleLabel.font = .systemFont(ofSize: fontSize(for: size), weight: .medium)
+
+        let hasText = !(label ?? "").isEmpty
+        switch contentMode {
+        case .iconAndText:
+            imageView.isHidden = false
+            titleLabel.isHidden = !hasText
+        case .iconOnly:
+            imageView.isHidden = false
+            titleLabel.isHidden = true
+        case .textOnly:
+            imageView.isHidden = true
+            titleLabel.isHidden = !hasText
+        }
+    }
+
+    private func minWidth(for size: AccessoryToolbarButtonSize) -> CGFloat {
+        switch size {
+        case .small: return 34
+        case .medium: return 44
+        case .large: return 58
+        }
+    }
+
+    private func minHeight(for size: AccessoryToolbarButtonSize) -> CGFloat {
+        switch size {
+        case .small: return 30
+        case .medium: return 34
+        case .large: return 42
+        }
+    }
+
+    private func symbolPointSize(for size: AccessoryToolbarButtonSize) -> CGFloat {
+        switch size {
+        case .small: return 15
+        case .medium: return 18
+        case .large: return 22
+        }
+    }
+
+    private func fontSize(for size: AccessoryToolbarButtonSize) -> CGFloat {
+        switch size {
+        case .small: return 8
+        case .medium: return 9
+        case .large: return 11
+        }
     }
 
     @objc private func tapped() { onTap?() }

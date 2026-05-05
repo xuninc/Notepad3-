@@ -369,6 +369,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         accessory.autoresizingMask = [.flexibleWidth]
         accessory.frame = CGRect(x: 0, y: 0, width: 320, height: 44)
         accessory.rows = prefs.accessoryRows == .double ? .double : .single
+        accessory.buttonSize = prefs.accessoryToolbarButtonSize
+        accessory.accessoryContentMode = prefs.accessoryToolbarContentMode
+        accessory.staticButtons = prefs.staticAccessoryButtons
+        accessory.hiddenButtons = prefs.hiddenAccessoryButtons
         accessory.onHide = { [weak self] in self?.textView.resignFirstResponder() }
         accessory.onReadToggle = { [weak self] in self?.readMode.toggle() }
         accessory.onUndo = { [weak self] in self?.textView.undoManager?.undo() }
@@ -739,8 +743,13 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         classicToolbar.setLabelsVisible(prefs.toolbarLabels)
         classicToolbar.setRows(prefs.toolbarRows == .double ? 2 : 1)
         classicToolbar.isHidden = (prefs.layoutMode == .classic) ? !toolbarOpen : true
-        // Keyboard accessory rows
+        // Keyboard accessory rows and toolbar customization
         keyboardAccessory.rows = prefs.accessoryRows == .double ? .double : .single
+        keyboardAccessory.buttonSize = prefs.accessoryToolbarButtonSize
+        keyboardAccessory.accessoryContentMode = prefs.accessoryToolbarContentMode
+        keyboardAccessory.staticButtons = prefs.staticAccessoryButtons
+        keyboardAccessory.hiddenButtons = prefs.hiddenAccessoryButtons
+        textView.reloadInputViews()
         // Custom palette may have changed
         applyPalette()
     }

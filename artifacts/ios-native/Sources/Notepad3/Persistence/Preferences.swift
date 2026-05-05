@@ -10,6 +10,95 @@ enum ToolbarRows: String, Codable {
     case single, double
 }
 
+enum AccessoryToolbarButtonSize: String, Codable, CaseIterable {
+    case small, medium, large
+
+    var displayTitle: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        }
+    }
+}
+
+enum AccessoryToolbarContentMode: String, Codable, CaseIterable {
+    case iconAndText = "icon_and_text"
+    case iconOnly = "icon_only"
+    case textOnly = "text_only"
+
+    var displayTitle: String {
+        switch self {
+        case .iconAndText: return "Text + icon"
+        case .iconOnly: return "Icon only"
+        case .textOnly: return "Text only"
+        }
+    }
+}
+
+enum AccessoryToolbarButton: String, Codable, CaseIterable {
+    case hideKeyboard = "hide_keyboard"
+    case cut
+    case copy
+    case paste
+    case selectWord = "select_word"
+    case selectLine = "select_line"
+    case selectAll = "select_all"
+    case undo
+    case redo
+    case readMode = "read_mode"
+    case find
+    case replace
+    case insertDate = "insert_date"
+    case openDocuments = "open_documents"
+    case compare
+    case more
+    case shift
+    case moveUp = "move_up"
+    case deleteBackward = "delete_backward"
+    case moveLeft = "move_left"
+    case moveDown = "move_down"
+    case moveRight = "move_right"
+
+    var displayTitle: String {
+        switch self {
+        case .hideKeyboard: return "Hide"
+        case .cut: return "Cut"
+        case .copy: return "Copy"
+        case .paste: return "Paste"
+        case .selectWord: return "Word"
+        case .selectLine: return "Line"
+        case .selectAll: return "All"
+        case .undo: return "Undo"
+        case .redo: return "Redo"
+        case .readMode: return "Read"
+        case .find: return "Find"
+        case .replace: return "Replace"
+        case .insertDate: return "Date"
+        case .openDocuments: return "Open"
+        case .compare: return "Compare"
+        case .more: return "More"
+        case .shift: return "Shift"
+        case .moveUp: return "Up"
+        case .deleteBackward: return "Delete"
+        case .moveLeft: return "Left"
+        case .moveDown: return "Down"
+        case .moveRight: return "Right"
+        }
+    }
+
+    static let staticCandidates: [AccessoryToolbarButton] = [
+        .shift,
+        .moveUp,
+        .deleteBackward,
+        .moveLeft,
+        .moveDown,
+        .moveRight,
+    ]
+
+    static let defaultStaticButtons: Set<AccessoryToolbarButton> = Set(staticCandidates)
+}
+
 // NOTE: `LayoutMode`, `StarterContent`, and `AccessoryRows` are defined in
 // `Models/Theme.swift` and reused here — do not redefine them.
 
@@ -28,6 +117,10 @@ final class Preferences {
     private let keyToolbarLabels    = "notepad3pp.toolbarLabels"
     private let keyToolbarRows      = "notepad3pp.toolbarRows"
     private let keyAccessoryRows    = "notepad3pp.accessoryRows"
+    private let keyAccessoryButtonSize = "notepad3pp.accessoryToolbarButtonSize"
+    private let keyAccessoryContentMode = "notepad3pp.accessoryToolbarContentMode"
+    private let keyStaticAccessoryButtons = "notepad3pp.staticAccessoryButtons"
+    private let keyHiddenAccessoryButtons = "notepad3pp.hiddenAccessoryButtons"
     private let keyLayoutMode       = "notepad3pp.layoutMode"
     private let keyStarterContent   = "notepad3pp.starterContent"
     private let keyCustomPalette    = "notepad3pp.customPalette"
@@ -71,6 +164,72 @@ final class Preferences {
             defaults.set(newValue.rawValue, forKey: keyAccessoryRows)
             notify()
         }
+    }
+
+    var accessoryToolbarButtonSize: AccessoryToolbarButtonSize {
+        get {
+            AccessoryToolbarButtonSize(rawValue: defaults.string(forKey: keyAccessoryButtonSize) ?? "")
+                ?? .medium
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: keyAccessoryButtonSize)
+            notify()
+        }
+    }
+
+    var accessoryToolbarContentMode: AccessoryToolbarContentMode {
+        get {
+            AccessoryToolbarContentMode(rawValue: defaults.string(forKey: keyAccessoryContentMode) ?? "")
+                ?? .iconAndText
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: keyAccessoryContentMode)
+            notify()
+        }
+    }
+
+    var staticAccessoryButtons: Set<AccessoryToolbarButton> {
+        get { decodeButtonSet(key: keyStaticAccessoryButtons, fallback: AccessoryToolbarButton.defaultStaticButtons) }
+        set {
+            defaults.set(encodeButtonSet(newValue), forKey: keyStaticAccessoryButtons)
+            notify()
+        }
+    }
+
+    var hiddenAccessoryButtons: Set<AccessoryToolbarButton> {
+        get { decodeButtonSet(key: keyHiddenAccessoryButtons, fallback: []) }
+        set {
+            defaults.set(encodeButtonSet(newValue), forKey: keyHiddenAccessoryButtons)
+            notify()
+        }
+    }
+
+    func toggleStaticAccessoryButton(_ button: AccessoryToolbarButton) {
+        var pinned = staticAccessoryButtons
+        var hidden = hiddenAccessoryButtons
+        if pinned.contains(button) {
+            pinned.remove(button)
+        } else {
+            pinned.insert(button)
+            hidden.remove(button)
+        }
+        defaults.set(encodeButtonSet(pinned), forKey: keyStaticAccessoryButtons)
+        defaults.set(encodeButtonSet(hidden), forKey: keyHiddenAccessoryButtons)
+        notify()
+    }
+
+    func toggleHiddenAccessoryButton(_ button: AccessoryToolbarButton) {
+        var pinned = staticAccessoryButtons
+        var hidden = hiddenAccessoryButtons
+        if hidden.contains(button) {
+            hidden.remove(button)
+        } else {
+            hidden.insert(button)
+            pinned.remove(button)
+        }
+        defaults.set(encodeButtonSet(pinned), forKey: keyStaticAccessoryButtons)
+        defaults.set(encodeButtonSet(hidden), forKey: keyHiddenAccessoryButtons)
+        notify()
     }
 
     var layoutMode: LayoutMode {
@@ -123,5 +282,15 @@ final class Preferences {
 
     private func notify() {
         for block in observers.values { block() }
+    }
+
+    private func decodeButtonSet(key: String, fallback: Set<AccessoryToolbarButton>) -> Set<AccessoryToolbarButton> {
+        guard let raw = defaults.string(forKey: key) else { return fallback }
+        if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [] }
+        return Set(raw.split(separator: ",").compactMap { AccessoryToolbarButton(rawValue: String($0).trimmingCharacters(in: .whitespacesAndNewlines)) })
+    }
+
+    private func encodeButtonSet(_ buttons: Set<AccessoryToolbarButton>) -> String {
+        buttons.map(\.rawValue).sorted().joined(separator: ",")
     }
 }

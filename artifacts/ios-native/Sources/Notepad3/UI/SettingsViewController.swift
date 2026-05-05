@@ -22,6 +22,9 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         case toolbarLabelsSwitch
         case toolbarRowsSegment
         case accessoryRowsSegment
+        case accessoryButtonSizeSegment
+        case accessoryContentModeSegment
+        case toolbarButtonPicker
         case layoutModeSegment
         case starterContentSegment
         case customPaletteButton
@@ -60,6 +63,9 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
                     .toolbarLabelsSwitch,
                     .toolbarRowsSegment,
                     .accessoryRowsSegment,
+                    .accessoryButtonSizeSegment,
+                    .accessoryContentModeSegment,
+                    .toolbarButtonPicker,
                 ]
             ),
             Section(
@@ -226,6 +232,50 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
             }
             return cell
 
+        case .accessoryButtonSizeSegment:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "segment", for: indexPath) as! SegmentedRowCell
+            let options = AccessoryToolbarButtonSize.allCases
+            cell.configure(
+                title: "Accessory button size",
+                options: options.map(\.displayTitle),
+                selectedIndex: options.firstIndex(of: prefs.accessoryToolbarButtonSize) ?? 1,
+                palette: palette
+            ) { [weak self] idx in
+                guard options.indices.contains(idx) else { return }
+                self?.prefs.accessoryToolbarButtonSize = options[idx]
+            }
+            return cell
+
+        case .accessoryContentModeSegment:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "segment", for: indexPath) as! SegmentedRowCell
+            let options = AccessoryToolbarContentMode.allCases
+            cell.configure(
+                title: "Accessory button labels",
+                options: options.map(\.displayTitle),
+                selectedIndex: options.firstIndex(of: prefs.accessoryToolbarContentMode) ?? 0,
+                palette: palette
+            ) { [weak self] idx in
+                guard options.indices.contains(idx) else { return }
+                self?.prefs.accessoryToolbarContentMode = options[idx]
+            }
+            return cell
+
+        case .toolbarButtonPicker:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
+            var cfg = cell.defaultContentConfiguration()
+            cfg.text = "Customize toolbar buttons"
+            cfg.secondaryText = "\(prefs.staticAccessoryButtons.count) static, \(prefs.hiddenAccessoryButtons.count) hidden"
+            cfg.image = UIImage(systemName: "keyboard")
+            cfg.textProperties.color = palette.foreground
+            cfg.secondaryTextProperties.color = palette.mutedForeground
+            cfg.imageProperties.tintColor = palette.primary
+            cell.contentConfiguration = cfg
+            cell.accessoryType = .disclosureIndicator
+            cell.backgroundColor = palette.card
+            cell.tintColor = palette.primary
+            cell.selectionStyle = .default
+            return cell
+
         case .layoutModeSegment:
             let cell = tableView.dequeueReusableCell(withIdentifier: "segment", for: indexPath) as! SegmentedRowCell
             cell.configure(
@@ -287,6 +337,11 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
                 nav.modalPresentationStyle = .formSheet
                 present(nav, animated: true)
             }
+        case .toolbarButtonPicker:
+            navigationController?.pushViewController(
+                ToolbarButtonsViewController(palette: themes.palette),
+                animated: true
+            )
         default:
             break // segmented / switch rows handle their own selection
         }
@@ -441,5 +496,120 @@ private final class SwitchRowCell: UITableViewCell {
 
     @objc private func changed() {
         onChange?(toggle.isOn)
+    }
+}
+
+// MARK: - Toolbar button picker
+
+private final class ToolbarButtonsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private enum Section: Int, CaseIterable {
+        case staticButtons
+        case hiddenButtons
+
+        var title: String {
+            switch self {
+            case .staticButtons: return "Static buttons"
+            case .hiddenButtons: return "Hidden buttons"
+            }
+        }
+
+        var footer: String? {
+            switch self {
+            case .staticButtons:
+                return "Static buttons stay pinned at the front of the accessory toolbar."
+            case .hiddenButtons:
+                return "Hidden buttons are removed from both the pinned and scrolling toolbar areas."
+            }
+        }
+    }
+
+    private let prefs = Preferences.shared
+    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private var palette: Palette
+
+    init(palette: Palette) {
+        self.palette = palette
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Toolbar Buttons"
+
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "row")
+        view.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        applyPalette()
+    }
+
+    private func applyPalette() {
+        view.backgroundColor = palette.background
+        tableView.backgroundColor = palette.background
+        navigationController?.navigationBar.tintColor = palette.primary
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        Section(rawValue: section)?.title
+    }
+
+    func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        Section(rawValue: section)?.footer
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        guard let section = Section(rawValue: section) else { return 0 }
+        switch section {
+        case .staticButtons:
+            return AccessoryToolbarButton.staticCandidates.count
+        case .hiddenButtons:
+            return AccessoryToolbarButton.allCases.count
+        }
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
+        let button = button(at: indexPath)
+        var cfg = cell.defaultContentConfiguration()
+        cfg.text = button.displayTitle
+        cfg.textProperties.color = palette.foreground
+        cell.contentConfiguration = cfg
+        cell.backgroundColor = palette.card
+        cell.tintColor = palette.primary
+        if Section(rawValue: indexPath.section) == .staticButtons {
+            cell.accessoryType = prefs.staticAccessoryButtons.contains(button) ? .checkmark : .none
+        } else {
+            cell.accessoryType = prefs.hiddenAccessoryButtons.contains(button) ? .checkmark : .none
+        }
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let button = button(at: indexPath)
+        if Section(rawValue: indexPath.section) == .staticButtons {
+            prefs.toggleStaticAccessoryButton(button)
+        } else {
+            prefs.toggleHiddenAccessoryButton(button)
+        }
+        tableView.reloadData()
+    }
+
+    private func button(at indexPath: IndexPath) -> AccessoryToolbarButton {
+        if Section(rawValue: indexPath.section) == .staticButtons {
+            return AccessoryToolbarButton.staticCandidates[indexPath.row]
+        }
+        return AccessoryToolbarButton.allCases[indexPath.row]
     }
 }
