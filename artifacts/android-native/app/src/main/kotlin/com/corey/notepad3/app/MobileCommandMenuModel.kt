@@ -1,5 +1,7 @@
 package com.corey.notepad3.app
 
+import com.corey.notepad3.models.DocumentLanguage
+
 internal enum class MobileMenuSurface {
     TOP_QUICK,
     MENU_BAR,
@@ -283,6 +285,9 @@ internal fun preferencesHomeRows(): List<MobileMenuRow> =
         MobileMenuRow("Editor"),
     )
 
+internal fun preferencesBackDestination(destination: PreferencesDestination): PreferencesDestination? =
+    if (destination == PreferencesDestination.GENERAL) null else PreferencesDestination.GENERAL
+
 private fun topQuickMenuSections(): List<MobileMenuSection> =
     listOf(
         MobileMenuSection(
@@ -376,18 +381,7 @@ private fun menuBarSections(): List<MobileMenuSection> =
         ),
         MobileMenuSection(
             title = "Language",
-            rows = listOf(
-                "Plain text",
-                "Markdown",
-                "JSON",
-                "HTML",
-                "CSS",
-                "JavaScript",
-                "Kotlin",
-                "Swift",
-                "Python",
-                "C++",
-            ).map(::MobileMenuRow),
+            rows = DocumentLanguage.selectableLanguages.map { MobileMenuRow(it.displayName) },
         ),
         MobileMenuSection(
             title = "Settings",

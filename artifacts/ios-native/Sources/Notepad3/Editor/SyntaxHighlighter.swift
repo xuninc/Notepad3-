@@ -56,8 +56,8 @@ enum SyntaxHighlighter {
         var claimed: [NSRange] = []
 
         // Block comments are honored when the language uses `//` as a line
-        // comment — that heuristically covers C-style languages (JS, Web, JSON).
-        let supportsBlockComments = language.commentPrefixes.contains("//")
+        // comment — that covers C-style languages plus CSS block comments.
+        let supportsBlockComments = language.supportsBlockComments
         let isAssembly = language == .assembly
         let isJavaScript = language == .javaScript
 

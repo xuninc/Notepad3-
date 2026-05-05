@@ -63,6 +63,14 @@ class MobileCommandMenuModelTest {
     }
 
     @Test
+    fun preferencesBackReturnsFromSubpageBeforeDismissing() {
+        assertEquals(PreferencesDestination.GENERAL, preferencesBackDestination(PreferencesDestination.APPEARANCE))
+        assertEquals(PreferencesDestination.GENERAL, preferencesBackDestination(PreferencesDestination.TOOLBAR))
+        assertEquals(PreferencesDestination.GENERAL, preferencesBackDestination(PreferencesDestination.EDITOR))
+        assertEquals(null, preferencesBackDestination(PreferencesDestination.GENERAL))
+    }
+
+    @Test
     fun keyboardAccessoryMoreUsesMenuBarSheet() {
         assertEquals(MobileMenuSurface.MENU_BAR, keyboardAccessoryMoreSurface())
     }

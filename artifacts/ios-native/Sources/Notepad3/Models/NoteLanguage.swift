@@ -5,17 +5,43 @@ enum NoteLanguage: String, Codable, CaseIterable {
     case markdown = "Markdown"
     case assembly = "Assembly"
     case javaScript = "JavaScript"
+    case kotlin = "Kotlin"
+    case swift = "Swift"
     case python = "Python"
+    case cPlusPlus = "C++"
+    case html = "HTML"
+    case css = "CSS"
+    case xml = "XML"
     case web = "Web"
     case json = "JSON"
+
+    static let selectableLanguages: [NoteLanguage] = [
+        .plain,
+        .markdown,
+        .json,
+        .html,
+        .css,
+        .javaScript,
+        .kotlin,
+        .swift,
+        .python,
+        .cPlusPlus,
+        .xml,
+        .assembly,
+    ]
 
     static func detect(fromFileName name: String) -> NoteLanguage {
         let lower = name.lowercased()
         if lower.range(of: #"\.(asm|s|nasm|masm|inc)$"#, options: .regularExpression) != nil { return .assembly }
         if lower.range(of: #"\.(md|markdown)$"#, options: .regularExpression) != nil { return .markdown }
         if lower.range(of: #"\.(js|jsx|ts|tsx|mjs|cjs)$"#, options: .regularExpression) != nil { return .javaScript }
+        if lower.range(of: #"\.(kt|kts)$"#, options: .regularExpression) != nil { return .kotlin }
+        if lower.range(of: #"\.swift$"#, options: .regularExpression) != nil { return .swift }
         if lower.range(of: #"\.(py|pyw)$"#, options: .regularExpression) != nil { return .python }
-        if lower.range(of: #"\.(html|htm|css|xml|svg)$"#, options: .regularExpression) != nil { return .web }
+        if lower.range(of: #"\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$"#, options: .regularExpression) != nil { return .cPlusPlus }
+        if lower.range(of: #"\.(html|htm)$"#, options: .regularExpression) != nil { return .html }
+        if lower.range(of: #"\.css$"#, options: .regularExpression) != nil { return .css }
+        if lower.range(of: #"\.(xml|svg)$"#, options: .regularExpression) != nil { return .xml }
         if lower.range(of: #"\.(json|jsonc)$"#, options: .regularExpression) != nil { return .json }
         return .plain
     }
@@ -26,7 +52,7 @@ enum NoteLanguage: String, Codable, CaseIterable {
         switch self {
         case .assembly:
             return Self.assemblyOps
-        case .javaScript, .python, .web, .json:
+        case .javaScript, .kotlin, .swift, .python, .cPlusPlus, .html, .css, .xml, .web, .json:
             return Self.codeKeywords
         default:
             return []
@@ -41,8 +67,19 @@ enum NoteLanguage: String, Codable, CaseIterable {
     var commentPrefixes: [String] {
         switch self {
         case .assembly: return [";"]
-        case .web: return ["<!--", "//"]
-        default: return ["//", "#"]
+        case .python: return ["#"]
+        case .html, .xml: return ["<!--"]
+        case .javaScript, .kotlin, .swift, .cPlusPlus, .web, .json: return ["//"]
+        default: return []
+        }
+    }
+
+    var supportsBlockComments: Bool {
+        switch self {
+        case .javaScript, .kotlin, .swift, .cPlusPlus, .css, .web, .json:
+            return true
+        default:
+            return false
         }
     }
 
@@ -66,6 +103,7 @@ enum NoteLanguage: String, Codable, CaseIterable {
         class import export from async await try catch finally throw new typeof \
         interface type extends def lambda pass in is and or not true false null \
         undefined None True False public private protected static void int char \
-        float double bool string
+        float double bool string fun val struct enum protocol guard let var mut \
+        package namespace using template typename include define ifdef endif
         """.split(separator: " ").map(String.init))
 }

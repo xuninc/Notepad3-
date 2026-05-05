@@ -94,6 +94,22 @@ class EditorPreferencesTest {
     }
 
     @Test
+    fun accessoryToolbarPinnedAndHiddenChoicesStayMutuallyExclusive() {
+        val controller = EditorPreferenceController(InMemoryEditorPreferences())
+
+        controller.toggleStaticAccessoryButton(AccessoryToolbarButton.CUT)
+        controller.toggleHiddenAccessoryButton(AccessoryToolbarButton.CUT)
+
+        assertFalse(controller.displayOptions.value.staticAccessoryButtons.contains(AccessoryToolbarButton.CUT))
+        assertTrue(controller.displayOptions.value.hiddenAccessoryButtons.contains(AccessoryToolbarButton.CUT))
+
+        controller.toggleStaticAccessoryButton(AccessoryToolbarButton.CUT)
+
+        assertTrue(controller.displayOptions.value.staticAccessoryButtons.contains(AccessoryToolbarButton.CUT))
+        assertFalse(controller.displayOptions.value.hiddenAccessoryButtons.contains(AccessoryToolbarButton.CUT))
+    }
+
+    @Test
     fun accessoryToolbarDoesNotExposeDuplicateReplaceButton() {
         val displayTitles = AccessoryToolbarButton.entries.map { it.displayTitle }
 

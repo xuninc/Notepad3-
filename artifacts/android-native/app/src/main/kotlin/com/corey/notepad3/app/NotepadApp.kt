@@ -850,6 +850,7 @@ fun NotepadApp(
                             readMode = readMode,
                             zenMode = zenMode,
                             layoutMode = layoutMode,
+                            activeLanguage = active.language,
                             displayOptions = displayOptions,
                             trackpadActive = showTrackpad,
                             onDismiss = { showMore = false },
@@ -934,10 +935,7 @@ fun NotepadApp(
                             onSort = ::sortDocument,
                             onDuplicateLine = ::duplicateLine,
                             onDeleteLine = ::deleteLine,
-                            onChangeLanguage = {
-                                showLanguage = true
-                                showMore = false
-                            },
+                            onLanguageSelect = ::setDocumentLanguage,
                             commentEnabled = active.language.lineCommentPrefix != null,
                             previewEnabled = active.language == DocumentLanguage.MARKDOWN,
                             previewActive = showingMarkdownPreview,
@@ -1666,7 +1664,7 @@ private fun ClassicMenuBar(
             palette = palette,
             onOpen = { openMenu = it },
         ) {
-            DocumentLanguage.entries.forEach { language ->
+            DocumentLanguage.selectableLanguages.forEach { language ->
                 ClassicDropdownMenuItem(
                     text = language.displayName,
                     icon = Icons.Filled.Code,
@@ -2367,7 +2365,7 @@ private fun LanguagePanel(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text("Change syntax", color = palette.foreground.toColor(), style = MaterialTheme.typography.labelLarge)
-            DocumentLanguage.entries.forEach { language ->
+            DocumentLanguage.selectableLanguages.forEach { language ->
                 val selected = language == current
                 OutlinedButton(
                     onClick = { onSelect(language) },
@@ -2704,7 +2702,9 @@ private fun PreferencesPage(
     onFontSizeDown: () -> Unit,
     onFontSizeUp: () -> Unit,
 ) {
-    BackHandler(onBack = onDismiss)
+    BackHandler {
+        preferencesBackDestination(destination)?.let(onNavigate) ?: onDismiss()
+    }
     Surface(
         color = palette.background.toColor(),
         modifier = Modifier.fillMaxSize(),
@@ -2908,6 +2908,7 @@ private fun MorePanel(
     readMode: Boolean,
     zenMode: Boolean,
     layoutMode: EditorLayoutMode,
+    activeLanguage: DocumentLanguage,
     displayOptions: EditorDisplayOptions,
     trackpadActive: Boolean,
     onDismiss: () -> Unit,
@@ -2947,7 +2948,7 @@ private fun MorePanel(
     onSort: () -> Unit,
     onDuplicateLine: () -> Unit,
     onDeleteLine: () -> Unit,
-    onChangeLanguage: () -> Unit,
+    onLanguageSelect: (DocumentLanguage) -> Unit,
     commentEnabled: Boolean,
     previewEnabled: Boolean,
     previewActive: Boolean,
@@ -3011,72 +3012,88 @@ private fun MorePanel(
                 }
             }
 
-            MenuSectionHeader("File", palette)
-            MenuActionRow(Icons.AutoMirrored.Filled.NoteAdd, "New blank", palette) { run(onNew) }
-            MenuActionRow(Icons.AutoMirrored.Filled.List, "Open documents", palette) { run(onOpenDocuments) }
-            MenuActionRow(Icons.Filled.FolderOpen, "Open from Files", palette) { run(onOpenFile) }
-            MenuActionRow(Icons.Filled.Save, "Save", palette) { run(onSave) }
-            MenuActionRow(Icons.Filled.ContentCopy, "Duplicate current", palette) { run(onDuplicateDocument) }
-            MenuActionRow(Icons.Filled.Edit, "Rename current", palette) { run(onRenameDocument) }
-            MenuActionRow(Icons.Filled.Close, "Close current", palette, destructive = true) { run(onCloseDocument) }
-            MenuActionRow(Icons.Filled.DisabledByDefault, "Close others", palette) { run(onCloseOthers) }
-
-            MenuSectionHeader("Edit", palette)
-            MenuActionRow(Icons.AutoMirrored.Filled.Undo, "Undo", palette, enabled = canUndo) { run(onUndo) }
-            MenuActionRow(Icons.AutoMirrored.Filled.Redo, "Redo", palette, enabled = canRedo) { run(onRedo) }
-            MenuActionRow(Icons.Filled.ContentCut, "Cut", palette, enabled = !readMode) { run(onCut) }
-            MenuActionRow(Icons.Filled.ContentCopy, "Copy", palette) { run(onCopy) }
-            MenuActionRow(Icons.Filled.ContentPaste, "Paste", palette, enabled = !readMode) { run(onPaste) }
-            MenuActionRow(Icons.Filled.SelectAll, "Select all", palette) { run(onSelectAll) }
-            MenuActionRow(Icons.AutoMirrored.Filled.ShortText, "Select word", palette) { run(onSelectWord) }
-            MenuActionRow(Icons.AutoMirrored.Filled.Subject, "Select line", palette) { run(onSelectLine) }
-            MenuActionRow(Icons.Filled.FormatAlignJustify, "Select paragraph", palette) { run(onSelectParagraph) }
-            MenuActionRow(Icons.Filled.Search, "Find/Replace", palette) { run(onFind) }
-            MenuActionRow(Icons.AutoMirrored.Filled.KeyboardTab, "Go to line", palette) { run(onGotoLine) }
-            MenuActionRow(Icons.Filled.AccessTime, "Insert date/time", palette, enabled = !readMode) { run(onInsertDateTime) }
-            MenuActionRow(Icons.Filled.SortByAlpha, "Sort lines", palette, enabled = !readMode) { run(onSort) }
-            MenuActionRow(Icons.AutoMirrored.Filled.FormatAlignLeft, "Trim trailing spaces", palette, enabled = !readMode) { run(onTrim) }
-            MenuActionRow(Icons.Filled.ContentCut, "Trim leading spaces", palette, enabled = !readMode) { run(onTrimLeading) }
-            MenuActionRow(Icons.AutoMirrored.Filled.FormatAlignLeft, "Join selected lines", palette, enabled = !readMode) { run(onJoinLines) }
-            MenuActionRow(Icons.Filled.SwapVert, "Reverse lines", palette, enabled = !readMode) { run(onReverseLines) }
-            MenuActionRow(Icons.Filled.FilterList, "Unique lines", palette, enabled = !readMode) { run(onRemoveDuplicateLines) }
-            MenuActionRow(Icons.Filled.FormatSize, "Uppercase selection", palette, enabled = !readMode) { run(onUppercase) }
-            MenuActionRow(Icons.Filled.TextFields, "Lowercase selection", palette, enabled = !readMode) { run(onLowercase) }
-            MenuActionRow(Icons.AutoMirrored.Filled.FormatIndentIncrease, "Indent", palette, enabled = !readMode) { run(onIndent) }
-            MenuActionRow(Icons.AutoMirrored.Filled.FormatIndentDecrease, "Unindent", palette, enabled = !readMode) { run(onUnindent) }
-            MenuActionRow(Icons.Filled.Code, "Toggle comment", palette, enabled = !readMode && commentEnabled) { run(onToggleComment) }
-            MenuActionRow(Icons.Filled.KeyboardArrowUp, "Move line up", palette, enabled = !readMode) { run(onMoveLineUp) }
-            MenuActionRow(Icons.Filled.KeyboardArrowDown, "Move line down", palette, enabled = !readMode) { run(onMoveLineDown) }
-            MenuActionRow(Icons.Filled.AddBox, "Duplicate current line", palette, enabled = !readMode) { run(onDuplicateLine) }
-            MenuActionRow(Icons.Filled.IndeterminateCheckBox, "Delete current line", palette, enabled = !readMode, destructive = true) { run(onDeleteLine) }
-
-            MenuSectionHeader("View", palette)
-            MenuActionRow(if (readMode) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, "Read mode", palette, checked = readMode) { run(onToggleReadMode) }
-            MenuActionRow(if (zenMode) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, "Zen mode", palette, checked = zenMode) { run(onToggleZenMode) }
-            MenuActionRow(Icons.Filled.ViewColumn, "Compare documents", palette) { run(onCompare) }
-            MenuActionRow(
-                if (previewActive) Icons.Filled.Edit else Icons.Filled.Visibility,
-                if (previewActive) "Edit markdown" else "Preview markdown",
-                palette,
-                enabled = previewEnabled,
-                checked = previewActive,
-            ) { run(onTogglePreview) }
-            MenuActionRow(Icons.Filled.TouchApp, "Virtual trackpad", palette, checked = trackpadActive) { run(onToggleTrackpad) }
-            MenuActionRow(Icons.Filled.DesktopWindows, layoutMode.toggleLabel, palette) { run(onToggleLayoutMode) }
-            MenuActionRow(Icons.AutoMirrored.Filled.WrapText, "Word wrap", palette, checked = displayOptions.wordWrap) { run(onToggleWordWrap) }
-            MenuActionRow(Icons.Filled.FormatListNumbered, "Line numbers", palette, checked = displayOptions.lineNumbers) { run(onToggleLineNumbers) }
-            MenuActionRow(Icons.Filled.Keyboard, "Keyboard toolbar", palette, checked = displayOptions.accessoryBar) { run(onToggleAccessoryBar) }
-            MenuFontRow(displayOptions.fontSizeSp, palette, onFontSizeDown, onFontSizeUp)
-
-            MenuSectionHeader("Settings", palette)
-            MenuActionRow(Icons.Filled.Settings, "Preferences", palette, subtitle = "Full-screen settings page") { run(onPreferences) }
-            MenuActionRow(Icons.Filled.Palette, "Appearance", palette, subtitle = "Themes and layout") { run(onAppearancePreferences) }
-            MenuActionRow(Icons.Filled.Keyboard, "Toolbar", palette, subtitle = "Rows, size, pinned buttons") { run(onToolbarPreferences) }
-            MenuActionRow(Icons.Filled.Code, "Change language", palette) { run(onChangeLanguage) }
-            MenuActionRow(Icons.Filled.Palette, "Cycle theme", palette) { run(onCycleTheme) }
-
-            MenuSectionHeader("Help", palette)
-            MenuActionRow(Icons.Filled.Info, "About Notepad 3++", palette) { run(onShowAbout) }
+            mobileMenuSections(MobileMenuSurface.MENU_BAR).forEach { section ->
+                MenuSectionHeader(section.title, palette)
+                section.rows.forEach { row ->
+                    val title = row.title
+                    when (section.title) {
+                        "File" -> when (title) {
+                            "New blank" -> MenuActionRow(Icons.AutoMirrored.Filled.NoteAdd, title, palette) { run(onNew) }
+                            "Open documents" -> MenuActionRow(Icons.AutoMirrored.Filled.List, title, palette) { run(onOpenDocuments) }
+                            "Open from Files" -> MenuActionRow(Icons.Filled.FolderOpen, title, palette) { run(onOpenFile) }
+                            "Save" -> MenuActionRow(Icons.Filled.Save, title, palette) { run(onSave) }
+                            "Duplicate current" -> MenuActionRow(Icons.Filled.ContentCopy, title, palette) { run(onDuplicateDocument) }
+                            "Rename current" -> MenuActionRow(Icons.Filled.Edit, title, palette) { run(onRenameDocument) }
+                            "Close current" -> MenuActionRow(Icons.Filled.Close, title, palette, destructive = true) { run(onCloseDocument) }
+                            "Close others" -> MenuActionRow(Icons.Filled.DisabledByDefault, title, palette) { run(onCloseOthers) }
+                        }
+                        "Edit" -> when (title) {
+                            "Undo" -> MenuActionRow(Icons.AutoMirrored.Filled.Undo, title, palette, enabled = canUndo) { run(onUndo) }
+                            "Redo" -> MenuActionRow(Icons.AutoMirrored.Filled.Redo, title, palette, enabled = canRedo) { run(onRedo) }
+                            "Cut" -> MenuActionRow(Icons.Filled.ContentCut, title, palette, enabled = !readMode) { run(onCut) }
+                            "Copy" -> MenuActionRow(Icons.Filled.ContentCopy, title, palette) { run(onCopy) }
+                            "Paste" -> MenuActionRow(Icons.Filled.ContentPaste, title, palette, enabled = !readMode) { run(onPaste) }
+                            "Select all" -> MenuActionRow(Icons.Filled.SelectAll, title, palette) { run(onSelectAll) }
+                            "Select word" -> MenuActionRow(Icons.AutoMirrored.Filled.ShortText, title, palette) { run(onSelectWord) }
+                            "Select line" -> MenuActionRow(Icons.AutoMirrored.Filled.Subject, title, palette) { run(onSelectLine) }
+                            "Select paragraph" -> MenuActionRow(Icons.Filled.FormatAlignJustify, title, palette) { run(onSelectParagraph) }
+                            "Insert date/time" -> MenuActionRow(Icons.Filled.AccessTime, title, palette, enabled = !readMode) { run(onInsertDateTime) }
+                            "Uppercase selection" -> MenuActionRow(Icons.Filled.FormatSize, title, palette, enabled = !readMode) { run(onUppercase) }
+                            "Lowercase selection" -> MenuActionRow(Icons.Filled.TextFields, title, palette, enabled = !readMode) { run(onLowercase) }
+                            "Indent" -> MenuActionRow(Icons.AutoMirrored.Filled.FormatIndentIncrease, title, palette, enabled = !readMode) { run(onIndent) }
+                            "Unindent" -> MenuActionRow(Icons.AutoMirrored.Filled.FormatIndentDecrease, title, palette, enabled = !readMode) { run(onUnindent) }
+                            "Toggle comment" -> MenuActionRow(Icons.Filled.Code, title, palette, enabled = !readMode && commentEnabled) { run(onToggleComment) }
+                        }
+                        "Search" -> when (title) {
+                            "Find/Replace" -> MenuActionRow(Icons.Filled.Search, title, palette) { run(onFind) }
+                            "Go to line" -> MenuActionRow(Icons.AutoMirrored.Filled.KeyboardTab, title, palette) { run(onGotoLine) }
+                            "Compare documents" -> MenuActionRow(Icons.Filled.ViewColumn, title, palette) { run(onCompare) }
+                        }
+                        "View" -> when (title) {
+                            "Read mode" -> MenuActionRow(if (readMode) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, title, palette, checked = readMode) { run(onToggleReadMode) }
+                            "Zen mode" -> MenuActionRow(if (zenMode) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, title, palette, checked = zenMode) { run(onToggleZenMode) }
+                            "Preview markdown" -> MenuActionRow(Icons.Filled.Visibility, title, palette, enabled = previewEnabled, checked = previewActive) { run(onTogglePreview) }
+                            "Virtual trackpad" -> MenuActionRow(Icons.Filled.TouchApp, title, palette, checked = trackpadActive) { run(onToggleTrackpad) }
+                            "Switch to classic layout" -> MenuActionRow(Icons.Filled.DesktopWindows, layoutMode.toggleLabel, palette) { run(onToggleLayoutMode) }
+                            "Word wrap" -> MenuActionRow(Icons.AutoMirrored.Filled.WrapText, title, palette, checked = displayOptions.wordWrap) { run(onToggleWordWrap) }
+                            "Line numbers" -> MenuActionRow(Icons.Filled.FormatListNumbered, title, palette, checked = displayOptions.lineNumbers) { run(onToggleLineNumbers) }
+                            "Keyboard toolbar" -> MenuActionRow(Icons.Filled.Keyboard, title, palette, checked = displayOptions.accessoryBar) { run(onToggleAccessoryBar) }
+                        }
+                        "Language" -> {
+                            val language = DocumentLanguage.selectableLanguages.firstOrNull { it.displayName == title }
+                            if (language != null) {
+                                MenuActionRow(Icons.Filled.Code, title, palette, checked = language == activeLanguage) {
+                                    run { onLanguageSelect(language) }
+                                }
+                            }
+                        }
+                        "Settings" -> when (title) {
+                            "Preferences" -> MenuActionRow(Icons.Filled.Settings, title, palette, subtitle = "Full-screen settings page") { run(onPreferences) }
+                            "Appearance preferences" -> MenuActionRow(Icons.Filled.Palette, title, palette, subtitle = "Themes and layout") { run(onAppearancePreferences) }
+                            "Toolbar preferences" -> MenuActionRow(Icons.Filled.Keyboard, title, palette, subtitle = "Rows, size, pinned buttons") { run(onToolbarPreferences) }
+                            "Cycle theme" -> MenuActionRow(Icons.Filled.Palette, title, palette) { run(onCycleTheme) }
+                        }
+                        "Tools" -> when (title) {
+                            "Duplicate current line" -> MenuActionRow(Icons.Filled.AddBox, title, palette, enabled = !readMode) { run(onDuplicateLine) }
+                            "Delete current line" -> MenuActionRow(Icons.Filled.IndeterminateCheckBox, title, palette, enabled = !readMode, destructive = true) { run(onDeleteLine) }
+                            "Move line up" -> MenuActionRow(Icons.Filled.KeyboardArrowUp, title, palette, enabled = !readMode) { run(onMoveLineUp) }
+                            "Move line down" -> MenuActionRow(Icons.Filled.KeyboardArrowDown, title, palette, enabled = !readMode) { run(onMoveLineDown) }
+                            "Sort lines" -> MenuActionRow(Icons.Filled.SortByAlpha, title, palette, enabled = !readMode) { run(onSort) }
+                            "Trim trailing spaces" -> MenuActionRow(Icons.AutoMirrored.Filled.FormatAlignLeft, title, palette, enabled = !readMode) { run(onTrim) }
+                            "Trim leading spaces" -> MenuActionRow(Icons.Filled.ContentCut, title, palette, enabled = !readMode) { run(onTrimLeading) }
+                            "Join selected lines" -> MenuActionRow(Icons.AutoMirrored.Filled.FormatAlignLeft, title, palette, enabled = !readMode) { run(onJoinLines) }
+                            "Reverse lines" -> MenuActionRow(Icons.Filled.SwapVert, title, palette, enabled = !readMode) { run(onReverseLines) }
+                            "Unique lines" -> MenuActionRow(Icons.Filled.FilterList, title, palette, enabled = !readMode) { run(onRemoveDuplicateLines) }
+                        }
+                        "Help" -> when (title) {
+                            "About Notepad 3++" -> MenuActionRow(Icons.Filled.Info, title, palette) { run(onShowAbout) }
+                        }
+                    }
+                }
+                if (section.title == "View") {
+                    MenuFontRow(displayOptions.fontSizeSp, palette, onFontSizeDown, onFontSizeUp)
+                }
+            }
         }
     }
 }
@@ -4327,6 +4344,7 @@ private fun String.toColor(): Color =
 private val ThemeName.displayTitle: String
     get() = when (this) {
         ThemeName.CLASSIC -> "Classic"
+        ThemeName.WINDOWS7 -> "Windows 7"
         ThemeName.LIGHT -> "Light"
         ThemeName.DARK -> "Dark"
         ThemeName.RETRO -> "Retro"

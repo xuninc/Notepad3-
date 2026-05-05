@@ -274,6 +274,7 @@ final class StatusBar: UIView {
     private func themeLabel(for name: ThemeName) -> String {
         switch name {
         case .classic:   return "Classic"
+        case .windows7:  return "Windows 7"
         case .light:     return "Light"
         case .dark:      return "Dark"
         case .retro:     return "Retro"

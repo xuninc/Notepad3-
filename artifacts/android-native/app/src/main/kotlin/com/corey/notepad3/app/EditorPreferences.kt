@@ -82,10 +82,24 @@ data class EditorDisplayOptions(
         copy(accessoryToolbarRows = rows.coerceIn(MIN_ACCESSORY_TOOLBAR_ROWS, MAX_ACCESSORY_TOOLBAR_ROWS))
 
     fun toggledStaticAccessoryButton(button: AccessoryToolbarButton): EditorDisplayOptions =
-        copy(staticAccessoryButtons = staticAccessoryButtons.toggled(button))
+        if (button in staticAccessoryButtons) {
+            copy(staticAccessoryButtons = staticAccessoryButtons - button)
+        } else {
+            copy(
+                staticAccessoryButtons = staticAccessoryButtons + button,
+                hiddenAccessoryButtons = hiddenAccessoryButtons - button,
+            )
+        }
 
     fun toggledHiddenAccessoryButton(button: AccessoryToolbarButton): EditorDisplayOptions =
-        copy(hiddenAccessoryButtons = hiddenAccessoryButtons.toggled(button))
+        if (button in hiddenAccessoryButtons) {
+            copy(hiddenAccessoryButtons = hiddenAccessoryButtons - button)
+        } else {
+            copy(
+                hiddenAccessoryButtons = hiddenAccessoryButtons + button,
+                staticAccessoryButtons = staticAccessoryButtons - button,
+            )
+        }
 
     companion object {
         const val MIN_FONT_SIZE_SP = 11
@@ -282,6 +296,3 @@ class AndroidEditorPreferences(context: Context) : EditorPreferences {
         private const val KEY_HIDDEN_ACCESSORY_BUTTONS = "notepad3pp.hiddenAccessoryButtons"
     }
 }
-
-private fun Set<AccessoryToolbarButton>.toggled(button: AccessoryToolbarButton): Set<AccessoryToolbarButton> =
-    if (button in this) this - button else this + button

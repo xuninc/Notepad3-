@@ -287,6 +287,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         aeroMenuBar.onSwitchToMobileLayout = { [weak self] in self?.prefs.layoutMode = .mobile }
         aeroMenuBar.onPreferences = { [weak self] in self?.presentSettings() }
         aeroMenuBar.onPickTheme = { [weak self] name in self?.themes.setPreference(.named(name)) }
+        aeroMenuBar.onPickLanguage = { [weak self] language in self?.store.updateActive(language: language) }
         aeroMenuBar.onAbout = { [weak self] in self?.presentAbout() }
         aeroMenuBar.onVersion = { [weak self] in self?.presentAbout() }
 
@@ -297,6 +298,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         aeroMenuBar.isZenMode = { [weak self] in self?.zenMode ?? false }
         aeroMenuBar.isCompareOpen = { false /* compare is modal, never "open" in-place */ }
         aeroMenuBar.currentTheme = { [weak self] in self?.themes.resolvedTheme ?? .light }
+        aeroMenuBar.currentLanguage = { [weak self] in self?.store.activeNote.language ?? .plain }
     }
 
     private func wireClassicToolbar() {
@@ -1332,9 +1334,13 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
                 SheetRow(icon: previewMode ? "pencil" : "eye.fill", title: previewMode ? "Edit markdown" : "Preview markdown", checked: previewMode) { [weak self] in self?.togglePreviewMode() },
                 SheetRow(icon: "macwindow", title: "Switch to classic layout") { [weak self] in self?.prefs.layoutMode = .classic },
             ]),
+            SheetSection(title: "Language", rows: NoteLanguage.selectableLanguages.map { language in
+                SheetRow(icon: "curlybraces", title: language.rawValue, checked: language == store.activeNote.language) { [weak self] in
+                    self?.store.updateActive(language: language)
+                }
+            }),
             SheetSection(title: "Tools", rows: [
                 SheetRow(icon: "gear", title: "Preferences…") { [weak self] in self?.presentSettings() },
-                SheetRow(icon: "curlybraces", title: "Change language") { [weak self] in self?.presentLanguagePicker() },
                 SheetRow(icon: "paintpalette", title: "Theme — quick toggle") { [weak self] in self?.themes.quickToggleDarkLight() },
             ]),
             SheetSection(title: "Help", rows: [

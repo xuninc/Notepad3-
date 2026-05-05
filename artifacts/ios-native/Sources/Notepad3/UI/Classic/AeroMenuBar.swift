@@ -1,6 +1,6 @@
 import UIKit
 
-/// Aero-era horizontal menu bar: File · Edit · View · Tools · Help. Each
+/// Classic horizontal menu bar: File · Edit · View · Language · Tools · Help. Each
 /// button presents a `ClassicMenuPopover` — a Windows-classic-styled flat
 /// dropdown — instead of UIKit's stock `UIMenu`. Business logic lives in
 /// the caller; the bar only fires closures.
@@ -43,6 +43,7 @@ final class AeroMenuBar: UIView {
     // Tools
     var onPreferences: (() -> Void)?
     var onPickTheme: ((ThemeName) -> Void)?
+    var onPickLanguage: ((NoteLanguage) -> Void)?
 
     // Help
     var onAbout: (() -> Void)?
@@ -56,6 +57,7 @@ final class AeroMenuBar: UIView {
     var isZenMode: (() -> Bool)?
     var isCompareOpen: (() -> Bool)?
     var currentTheme: (() -> ThemeName)?
+    var currentLanguage: (() -> NoteLanguage)?
 
     private let gradient = CAGradientLayer()
     private let separator = UIView()
@@ -98,6 +100,7 @@ final class AeroMenuBar: UIView {
             ("File",  { [weak self] in self?.fileRows()  ?? [] }),
             ("Edit",  { [weak self] in self?.editRows()  ?? [] }),
             ("View",  { [weak self] in self?.viewRows()  ?? [] }),
+            ("Language", { [weak self] in self?.languageRows() ?? [] }),
             ("Tools", { [weak self] in self?.toolsRows() ?? [] }),
             ("Help",  { [weak self] in self?.helpRows()  ?? [] }),
         ]
@@ -282,6 +285,15 @@ final class AeroMenuBar: UIView {
         ]
     }
 
+    private func languageRows() -> [ClassicMenuPopover.Row] {
+        let current = currentLanguage?() ?? .plain
+        return NoteLanguage.selectableLanguages.map { language in
+            .action(title: language.rawValue, symbol: "curlybraces", checked: language == current, destructive: false) { [weak self] in
+                self?.onPickLanguage?(language)
+            }
+        }
+    }
+
     private func helpRows() -> [ClassicMenuPopover.Row] {
         [
             .action(title: "About Notepad 3++", symbol: "info.circle", checked: false, destructive: false) { [weak self] in self?.onAbout?() },
@@ -292,6 +304,7 @@ final class AeroMenuBar: UIView {
     private func label(for name: ThemeName) -> String {
         switch name {
         case .classic:   return "Classic"
+        case .windows7:  return "Windows 7"
         case .light:     return "Light"
         case .dark:      return "Dark"
         case .retro:     return "Retro"

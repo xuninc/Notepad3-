@@ -24,9 +24,15 @@ object DocumentExport {
                 document.language == DocumentLanguage.JAVA_SCRIPT -> {
                 "application/javascript"
             }
-            title.endsWithAny(".html", ".htm") -> "text/html"
-            title.endsWith(".css") -> "text/css"
-            title.endsWithAny(".xml", ".svg") || document.language == DocumentLanguage.WEB -> "text/xml"
+            title.endsWithAny(".kt", ".kts") || document.language == DocumentLanguage.KOTLIN -> "text/x-kotlin"
+            title.endsWith(".swift") || document.language == DocumentLanguage.SWIFT -> "text/x-swift"
+            title.endsWithAny(".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx") ||
+                document.language == DocumentLanguage.C_PLUS_PLUS -> "text/x-c++src"
+            title.endsWithAny(".html", ".htm") || document.language == DocumentLanguage.HTML -> "text/html"
+            title.endsWith(".css") || document.language == DocumentLanguage.CSS -> "text/css"
+            title.endsWithAny(".xml", ".svg") ||
+                document.language == DocumentLanguage.XML ||
+                document.language == DocumentLanguage.WEB -> "text/xml"
             else -> "text/plain"
         }
     }

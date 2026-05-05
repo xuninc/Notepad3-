@@ -17,7 +17,7 @@ final class ThemeController {
     private var observers: [UUID: () -> Void] = [:]
 
     init() {
-        // Default to Classic — the Aero blue / Notepad 2 aesthetic that the
+        // Default to Classic — the blue Notepad 2-style chrome that the
         // app's name and chrome borrow from. Users can switch to any other
         // theme (including "match system") from Preferences.
         let raw = UserDefaults.standard.string(forKey: preferenceKey) ?? "named:classic"

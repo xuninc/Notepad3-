@@ -1,7 +1,7 @@
 import UIKit
 
 enum ThemeName: String, Codable, CaseIterable {
-    case classic, light, dark, retro, modern, cyberpunk, sunset, custom
+    case classic, windows7, light, dark, retro, modern, cyberpunk, sunset, custom
 }
 
 enum ThemePreference: Codable, Equatable {
@@ -64,6 +64,28 @@ extension Palette {
         chromeGradientStart: hex("#eef3fa"),
         chromeGradientEnd: hex("#cad9ed"),
         radius: 4
+    )
+
+    static let windows7 = Palette(
+        background: hex("#d4d0c8"),
+        foreground: hex("#111111"),
+        card: hex("#f0f0f0"),
+        primary: hex("#0a246a"),
+        primaryForeground: .white,
+        secondary: hex("#d8d8d8"),
+        muted: hex("#e9e9e9"),
+        mutedForeground: hex("#404040"),
+        accent: hex("#0a246a"),
+        border: hex("#808080"),
+        editorBackground: .white,
+        editorGutter: hex("#efefef"),
+        destructive: hex("#9b1c1c"),
+        success: hex("#246b24"),
+        titleGradientStart: hex("#0a246a"),
+        titleGradientEnd: hex("#0a246a"),
+        chromeGradientStart: hex("#f7f7f7"),
+        chromeGradientEnd: hex("#e3e3e3"),
+        radius: 1
     )
 
     static let light = Palette(
@@ -201,6 +223,7 @@ extension Palette {
     static func palette(for name: ThemeName) -> Palette {
         switch name {
         case .classic:   return .classic
+        case .windows7:  return .windows7
         case .light:     return .light
         case .dark:      return .dark
         case .retro:     return .retro

@@ -21,6 +21,26 @@ class DocumentExportTest {
             DocumentExport.mimeTypeFor(TextDocument(title = "script.py", language = DocumentLanguage.PYTHON)),
         )
         assertEquals(
+            "text/html",
+            DocumentExport.mimeTypeFor(TextDocument(title = "index", language = DocumentLanguage.HTML)),
+        )
+        assertEquals(
+            "text/css",
+            DocumentExport.mimeTypeFor(TextDocument(title = "styles", language = DocumentLanguage.CSS)),
+        )
+        assertEquals(
+            "text/x-kotlin",
+            DocumentExport.mimeTypeFor(TextDocument(title = "MainActivity.kt", language = DocumentLanguage.KOTLIN)),
+        )
+        assertEquals(
+            "text/x-swift",
+            DocumentExport.mimeTypeFor(TextDocument(title = "NotepadApp.swift", language = DocumentLanguage.SWIFT)),
+        )
+        assertEquals(
+            "text/x-c++src",
+            DocumentExport.mimeTypeFor(TextDocument(title = "editor.cpp", language = DocumentLanguage.C_PLUS_PLUS)),
+        )
+        assertEquals(
             "text/plain",
             DocumentExport.mimeTypeFor(TextDocument(title = "scratch", language = DocumentLanguage.PLAIN)),
         )

@@ -1,6 +1,6 @@
 import UIKit
 
-/// Modal syntax-language picker. Single-select table of `NoteLanguage.allCases`
+/// Modal syntax-language picker. Single-select table of `NoteLanguage.selectableLanguages`
 /// with a checkmark on the currently active language. Mirrors the RN
 /// `langOpen` / "Change syntax" modal. Calls `onPick` when the user chooses a
 /// language, or `onCancel` when they tap Done/Cancel.
@@ -11,7 +11,7 @@ final class LanguagePickerViewController: UIViewController, UITableViewDataSourc
     private let palette: Palette
     private var current: NoteLanguage
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-    private let languages: [NoteLanguage] = NoteLanguage.allCases
+    private let languages: [NoteLanguage] = NoteLanguage.selectableLanguages
 
     init(current: NoteLanguage, palette: Palette) {
         self.current = current

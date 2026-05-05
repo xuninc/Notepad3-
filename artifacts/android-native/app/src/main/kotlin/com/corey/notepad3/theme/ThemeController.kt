@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 
 enum class ThemeName(val storageName: String) {
     CLASSIC("classic"),
+    WINDOWS7("windows7"),
     LIGHT("light"),
     DARK("dark"),
     RETRO("retro"),
@@ -51,6 +52,7 @@ class ThemeController(private val preferences: ThemePreferences) {
     fun cycleEarlyThemes() {
         val namedThemes = listOf(
             ThemeName.CLASSIC,
+            ThemeName.WINDOWS7,
             ThemeName.LIGHT,
             ThemeName.DARK,
             ThemeName.RETRO,

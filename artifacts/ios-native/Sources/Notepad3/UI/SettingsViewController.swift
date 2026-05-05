@@ -297,6 +297,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
     private func label(for name: ThemeName) -> String {
         switch name {
         case .classic:   return "Classic"
+        case .windows7:  return "Windows 7"
         case .light:     return "Light"
         case .dark:      return "Dark"
         case .retro:     return "Retro"
@@ -309,7 +310,8 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
 
     private func hint(for name: ThemeName) -> String? {
         switch name {
-        case .classic:   return "Aero-era window chrome"
+        case .classic:   return "Classic blue window chrome"
+        case .windows7:  return "Crisp Windows 7 Classic chrome"
         case .light:     return "Clean and bright"
         case .dark:      return "Easy on the eyes"
         case .retro:     return "Windows 95 chrome"

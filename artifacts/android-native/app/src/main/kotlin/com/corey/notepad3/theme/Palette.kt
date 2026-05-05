@@ -44,6 +44,28 @@ data class Palette(
             radius = 2,
         )
 
+        val windows7 = Palette(
+            background = "#d4d0c8",
+            foreground = "#111111",
+            card = "#f0f0f0",
+            primary = "#0a246a",
+            primaryForeground = "#ffffff",
+            secondary = "#dfdfdf",
+            muted = "#e9e9e9",
+            mutedForeground = "#404040",
+            accent = "#0a246a",
+            border = "#808080",
+            editorBackground = "#ffffff",
+            editorGutter = "#f2f2f2",
+            destructive = "#b00000",
+            success = "#006100",
+            titleGradientStart = "#0a246a",
+            titleGradientEnd = "#0a246a",
+            chromeGradientStart = "#f7f7f7",
+            chromeGradientEnd = "#e3e3e3",
+            radius = 1,
+        )
+
         val light = Palette(
             background = "#f5f5f7",
             foreground = "#1a1a1a",
@@ -179,6 +201,7 @@ data class Palette(
         fun forName(name: ThemeName): Palette =
             when (name) {
                 ThemeName.CLASSIC -> classic
+                ThemeName.WINDOWS7 -> windows7
                 ThemeName.LIGHT -> light
                 ThemeName.DARK -> dark
                 ThemeName.RETRO -> retro

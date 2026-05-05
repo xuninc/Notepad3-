@@ -20,8 +20,26 @@ enum class DocumentLanguage(
     @SerialName("JavaScript")
     JAVA_SCRIPT("JavaScript", "//"),
 
+    @SerialName("Kotlin")
+    KOTLIN("Kotlin", "//"),
+
+    @SerialName("Swift")
+    SWIFT("Swift", "//"),
+
+    @SerialName("C++")
+    C_PLUS_PLUS("C++", "//"),
+
     @SerialName("Python")
     PYTHON("Python", "#"),
+
+    @SerialName("HTML")
+    HTML("HTML", null),
+
+    @SerialName("CSS")
+    CSS("CSS", null),
+
+    @SerialName("XML")
+    XML("XML", null),
 
     @SerialName("Web")
     WEB("Web", "//"),
@@ -30,14 +48,34 @@ enum class DocumentLanguage(
     JSON("JSON", "//");
 
     companion object {
+        val selectableLanguages: List<DocumentLanguage> = listOf(
+            PLAIN,
+            MARKDOWN,
+            JSON,
+            HTML,
+            CSS,
+            JAVA_SCRIPT,
+            KOTLIN,
+            SWIFT,
+            PYTHON,
+            C_PLUS_PLUS,
+            XML,
+            ASSEMBLY,
+        )
+
         fun detect(fileName: String): DocumentLanguage {
             val lower = fileName.lowercase()
             return when {
                 lower.matchesExtension("asm", "s", "nasm", "masm", "inc") -> ASSEMBLY
                 lower.matchesExtension("md", "markdown") -> MARKDOWN
                 lower.matchesExtension("js", "jsx", "ts", "tsx", "mjs", "cjs") -> JAVA_SCRIPT
+                lower.matchesExtension("kt", "kts") -> KOTLIN
+                lower.matchesExtension("swift") -> SWIFT
+                lower.matchesExtension("c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx") -> C_PLUS_PLUS
                 lower.matchesExtension("py", "pyw") -> PYTHON
-                lower.matchesExtension("html", "htm", "css", "xml", "svg") -> WEB
+                lower.matchesExtension("html", "htm") -> HTML
+                lower.matchesExtension("css") -> CSS
+                lower.matchesExtension("xml", "svg") -> XML
                 lower.matchesExtension("json", "jsonc") -> JSON
                 else -> PLAIN
             }
