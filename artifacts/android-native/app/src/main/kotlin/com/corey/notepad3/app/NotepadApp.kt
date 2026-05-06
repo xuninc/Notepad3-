@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -109,6 +110,7 @@ import com.corey.notepad3.theme.ThemeController
 import com.corey.notepad3.theme.ThemeName
 import com.corey.notepad3.theme.ThemePreference
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -3450,6 +3452,8 @@ private fun EditorTextArea(
             }
             if (editText.isFocused && shouldShowSoftKeyboard) {
                 editText.showSoftKeyboard()
+            } else if (editText.isFocused) {
+                editText.hideSoftKeyboardNow()
             }
             editText.setTextColor(palette.foreground.toColor().toArgb())
             editText.setBackgroundColor(palette.editorBackground.toColor().toArgb())
@@ -3667,6 +3671,7 @@ private fun MobileKeyboardAccessory(
             AccessoryDeckActionId.READ_MODE -> readOnly
             AccessoryDeckActionId.FIND -> findActive
             AccessoryDeckActionId.COMPARE -> compareActive
+            AccessoryDeckActionId.SWITCH_DECK -> keyboardSuppressed
             AccessoryDeckActionId.HIDE_KEYBOARD,
             AccessoryDeckActionId.ESCAPE -> keyboardToggle.active
             else -> false
@@ -3790,17 +3795,44 @@ private fun MobileKeyboardAccessory(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            accessoryDeckModifierStrip().forEach { spec ->
-                val iconOnly = spec.id == AccessoryDeckActionId.OPEN_DOCUMENTS
+            val modifierSpecs = accessoryDeckModifierStrip()
+            val switchSpec = AccessoryDeckKeySpec(AccessoryDeckActionId.SWITCH_DECK, "ABC")
+            modifierSpecs.take(1).forEach { spec ->
                 AccessoryDeckKeyButton(
                     key = renderKey(spec),
                     keyHeight = stripHeight,
-                    textOnly = !iconOnly,
-                    iconOnly = iconOnly,
+                    iconOnly = true,
                     textScale = 0.27f,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.width(railWidth.dp),
                 )
             }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                modifierSpecs.drop(1).forEach { spec ->
+                    AccessoryDeckKeyButton(
+                        key = renderKey(spec),
+                        keyHeight = stripHeight,
+                        textOnly = true,
+                        textScale = 0.27f,
+                        modifier = Modifier.width(86.dp),
+                    )
+                }
+            }
+            AccessoryDeckKeyButton(
+                key = renderKey(switchSpec).copy(
+                    onClick = onToggleKeyboardSuppression,
+                    labelOverride = "Keyboard",
+                ),
+                keyHeight = stripHeight,
+                iconOnly = true,
+                textScale = 0.27f,
+                modifier = Modifier.width(railWidth.dp),
+            )
         }
         Row(
             modifier = Modifier
@@ -3899,9 +3931,10 @@ private fun CompactKeyboardAccessoryStrip(
     }
     val darkBackground = Color(0xFF3A3A3A)
     val darkBorder = Color(0xFF4A4A4A)
+    val leftSpec = AccessoryDeckKeySpec(AccessoryDeckActionId.OPEN_DOCUMENTS, "Windows")
+    val switchSpec = AccessoryDeckKeySpec(AccessoryDeckActionId.SWITCH_DECK, "Keys")
     val compactSpecs = listOf(
-        AccessoryDeckKeySpec(AccessoryDeckActionId.OPEN_DOCUMENTS, "Windows"),
-        AccessoryDeckKeySpec(AccessoryDeckActionId.HIDE_KEYBOARD, "Hide"),
+        AccessoryDeckKeySpec(AccessoryDeckActionId.ESCAPE, "esc"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.SHIFT, "shift"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.CTRL, "ctrl"),
         AccessoryDeckKeySpec(AccessoryDeckActionId.ALT, "alt"),
@@ -3930,15 +3963,24 @@ private fun CompactKeyboardAccessoryStrip(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        AccessoryDeckKeyButton(
+            key = renderKey(leftSpec),
+            keyHeight = stripHeight,
+            iconOnly = true,
+            textScale = 0.29f,
+            modifier = Modifier.width(58.dp),
+        )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         compactSpecs.forEach { spec ->
             val key = renderKey(spec)
-            val finalKey = if (spec.id == AccessoryDeckActionId.HIDE_KEYBOARD) {
-                key.copy(onClick = onShowDeck)
-            } else {
-                key
-            }
             val fixedWidth = when (spec.id) {
-                AccessoryDeckActionId.OPEN_DOCUMENTS,
                 AccessoryDeckActionId.COPY,
                 AccessoryDeckActionId.CUT,
                 AccessoryDeckActionId.PASTE,
@@ -3952,10 +3994,9 @@ private fun CompactKeyboardAccessoryStrip(
                 else -> 86.dp
             }
             AccessoryDeckKeyButton(
-                key = finalKey,
+                key = key,
                 keyHeight = stripHeight,
                 iconOnly = spec.id in setOf(
-                    AccessoryDeckActionId.OPEN_DOCUMENTS,
                     AccessoryDeckActionId.COPY,
                     AccessoryDeckActionId.CUT,
                     AccessoryDeckActionId.PASTE,
@@ -3964,7 +4005,6 @@ private fun CompactKeyboardAccessoryStrip(
                     AccessoryDeckActionId.MORE,
                 ),
                 textOnly = spec.id !in setOf(
-                    AccessoryDeckActionId.OPEN_DOCUMENTS,
                     AccessoryDeckActionId.COPY,
                     AccessoryDeckActionId.CUT,
                     AccessoryDeckActionId.PASTE,
@@ -3980,6 +4020,17 @@ private fun CompactKeyboardAccessoryStrip(
                 modifier = Modifier.width(fixedWidth),
             )
         }
+        }
+        AccessoryDeckKeyButton(
+            key = renderKey(switchSpec).copy(
+                onClick = onShowDeck,
+                labelOverride = "Deck",
+            ),
+            keyHeight = stripHeight,
+            iconOnly = true,
+            textScale = 0.29f,
+            modifier = Modifier.width(64.dp),
+        )
     }
 }
 
@@ -4039,30 +4090,32 @@ private fun AccessoryDeckKeyButton(
     textScale: Float = 0.36f,
 ) {
     val shape = RoundedCornerShape(14.dp)
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     val latestOnClick = rememberUpdatedState(key.onClick)
-    if (key.spec.repeatOnHold) {
-        LaunchedEffect(isPressed, key.enabled) {
-            if (isPressed && key.enabled) {
-                latestOnClick.value()
-                delay(accessoryRepeatPressSpec.initialDelayMillis)
-                var iteration = 0
-                while (true) {
-                    latestOnClick.value()
-                    delay(repeatDelayForIteration(iteration))
-                    iteration += 1
-                }
-            }
-        }
-    }
     val pressModifier = if (key.spec.repeatOnHold) {
-        Modifier.clickable(
-            enabled = key.enabled,
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = {},
-        )
+        Modifier.pointerInput(key.enabled, key.spec.id) {
+            detectTapGestures(
+                onPress = {
+                    if (!key.enabled) return@detectTapGestures
+                    latestOnClick.value()
+                    kotlinx.coroutines.coroutineScope {
+                        val repeatJob = launch {
+                            delay(accessoryRepeatPressSpec.initialDelayMillis)
+                            var iteration = 0
+                            while (true) {
+                                latestOnClick.value()
+                                delay(repeatDelayForIteration(iteration))
+                                iteration += 1
+                            }
+                        }
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            repeatJob.cancel()
+                        }
+                    }
+                },
+            )
+        }
     } else {
         Modifier.clickable(enabled = key.enabled, onClick = key.onClick)
     }
@@ -4536,9 +4589,15 @@ private fun EditText.focusWithoutSoftKeyboard() {
     post {
         showSoftInputOnFocus = false
         if (!isFocused) requestFocus()
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return@post
-        imm.hideSoftInputFromWindow(windowToken, 0)
+        hideSoftKeyboardNow()
+        postDelayed({ hideSoftKeyboardNow() }, 80)
+        postDelayed({ hideSoftKeyboardNow() }, 220)
     }
+}
+
+private fun EditText.hideSoftKeyboardNow() {
+    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+    imm.hideSoftInputFromWindow(windowToken, 0)
 }
 
 @Suppress("DEPRECATION")
