@@ -441,7 +441,7 @@ final class KeyboardAccessoryView: UIView {
         }
         // The static cluster is two rows tall even when the scrolling toolbar
         // is single-row. Grow for Large buttons so controls do not clip.
-        CGSize(width: UIView.noIntrinsicMetric, height: max(88, accessoryRowHeight * 2))
+        return CGSize(width: UIView.noIntrinsicMetric, height: max(88, accessoryRowHeight * 2))
     }
 
     // MARK: - Layout
@@ -642,7 +642,7 @@ final class KeyboardAccessoryView: UIView {
                 [
                     DeckKeySpec(.compare, symbol: "rectangle.split.1x2"),
                     DeckKeySpec(.more, symbol: "ellipsis"),
-                    DeckKeySpec(.hideKeyboard, symbol: "keyboard", title: usesKeyboardDeck ? "ABC" : "Hide"),
+                    DeckKeySpec(.hideKeyboard, title: usesKeyboardDeck ? "ABC" : "Hide", symbol: "keyboard"),
                 ],
             ]
         case .navigation:
