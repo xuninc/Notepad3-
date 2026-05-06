@@ -122,15 +122,16 @@ class MobileCommandMenuModelTest {
             listOf("Windows", "esc", "shift", "ctrl", "alt", "enter"),
             accessoryDeckModifierStrip().map { it.label },
         )
+        assertEquals(AccessoryDeckPage.NAVIGATION, defaultAccessoryDeckPage())
         assertEquals(
-            listOf("Edit", "Nav", "123"),
+            listOf("Nav", "Edit", "123"),
             accessoryDeckPages().map { it.title },
         )
         assertEquals(3, accessoryDeckColumnCount(AccessoryDeckPage.EDIT))
         assertEquals(3, accessoryDeckColumnCount(AccessoryDeckPage.NAVIGATION))
         assertEquals(4, accessoryDeckColumnCount(AccessoryDeckPage.NUMERIC))
         assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.EDIT))
-        assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.NAVIGATION))
+        assertEquals(3, accessoryDeckRowCount(AccessoryDeckPage.NAVIGATION))
         assertEquals(4, accessoryDeckRowCount(AccessoryDeckPage.NUMERIC))
         assertEquals(
             listOf("Copy", "Cut", "Paste", "•••"),
@@ -145,7 +146,7 @@ class MobileCommandMenuModelTest {
             accessoryDeckKeys(AccessoryDeckPage.EDIT).map { it.label },
         )
         assertEquals(
-            listOf("prt scn", "scr lk", "break", "Home", "Insert", "Pg Up", "End", "Up", "Pg Dn", "Left", "Down", "Right"),
+            listOf("Home", "Up", "Pg Up", "End", "Down", "Pg Dn", "Left", "Right", "Tab"),
             accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).map { it.label },
         )
         assertEquals(
@@ -155,12 +156,12 @@ class MobileCommandMenuModelTest {
         assertEquals(2, accessoryDeckKeys(AccessoryDeckPage.NUMERIC).first { it.label == "0" }.columnSpan)
         assertTrue(accessoryDeckRightRail().first { it.label == "Backspace" }.repeatOnHold)
         assertTrue(accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).first { it.label == "Left" }.repeatOnHold)
-        assertEquals(AccessoryDeckPage.NAVIGATION, nextAccessoryDeckPage(AccessoryDeckPage.EDIT))
-        assertEquals(AccessoryDeckPage.NUMERIC, nextAccessoryDeckPage(AccessoryDeckPage.NAVIGATION))
-        assertEquals(AccessoryDeckPage.EDIT, nextAccessoryDeckPage(AccessoryDeckPage.NUMERIC))
-        assertEquals("●••", AccessoryDeckPage.EDIT.pageDotsLabel())
-        assertEquals("˄", accessoryDeckVisualLabel(accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).first { it.id == AccessoryDeckActionId.MOVE_UP }, AccessoryDeckPage.NAVIGATION))
-        assertEquals("‹", accessoryDeckVisualLabel(accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).first { it.id == AccessoryDeckActionId.MOVE_LEFT }, AccessoryDeckPage.NAVIGATION))
+        assertEquals(AccessoryDeckPage.EDIT, nextAccessoryDeckPage(AccessoryDeckPage.NAVIGATION))
+        assertEquals(AccessoryDeckPage.NUMERIC, nextAccessoryDeckPage(AccessoryDeckPage.EDIT))
+        assertEquals(AccessoryDeckPage.NAVIGATION, nextAccessoryDeckPage(AccessoryDeckPage.NUMERIC))
+        assertEquals("●••", AccessoryDeckPage.NAVIGATION.pageDotsLabel())
+        assertEquals("↑", accessoryDeckVisualLabel(accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).first { it.id == AccessoryDeckActionId.MOVE_UP }, AccessoryDeckPage.NAVIGATION))
+        assertEquals("←", accessoryDeckVisualLabel(accessoryDeckKeys(AccessoryDeckPage.NAVIGATION).first { it.id == AccessoryDeckActionId.MOVE_LEFT }, AccessoryDeckPage.NAVIGATION))
     }
 
     @Test

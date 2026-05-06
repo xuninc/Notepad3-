@@ -40,8 +40,8 @@ internal data class KeyboardAccessoryToggleState(
 internal enum class AccessoryDeckPage(
     val title: String,
 ) {
-    EDIT("Edit"),
     NAVIGATION("Nav"),
+    EDIT("Edit"),
     NUMERIC("123"),
 }
 
@@ -109,6 +109,9 @@ internal fun keyboardAccessoryMoreSurface(): MobileMenuSurface =
 internal fun accessoryStaticButtonRepeats(label: String): Boolean =
     label in setOf("Up", "Down", "Left", "Right", "Delete", "Backspace", "Home", "End", "Pg Up", "Pg Dn")
 
+internal fun defaultAccessoryDeckPage(): AccessoryDeckPage =
+    AccessoryDeckPage.NAVIGATION
+
 internal fun accessoryDeckPages(): List<AccessoryDeckPage> =
     AccessoryDeckPage.entries
 
@@ -130,7 +133,7 @@ internal fun accessoryDeckColumnCount(page: AccessoryDeckPage): Int =
 internal fun accessoryDeckRowCount(page: AccessoryDeckPage): Int =
     when (page) {
         AccessoryDeckPage.EDIT -> 4
-        AccessoryDeckPage.NAVIGATION -> 4
+        AccessoryDeckPage.NAVIGATION -> 3
         AccessoryDeckPage.NUMERIC -> 4
     }
 
@@ -175,18 +178,15 @@ internal fun accessoryDeckKeys(page: AccessoryDeckPage): List<AccessoryDeckKeySp
             AccessoryDeckKeySpec(AccessoryDeckActionId.HIDE_KEYBOARD, "Hide"),
         )
         AccessoryDeckPage.NAVIGATION -> listOf(
-            AccessoryDeckKeySpec(AccessoryDeckActionId.PRINT_SCREEN, "prt scn"),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.SCROLL_LOCK, "scr lk"),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.BREAK, "break"),
             AccessoryDeckKeySpec(AccessoryDeckActionId.HOME, "Home", repeatOnHold = true),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT, "Insert"),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_UP, "Up", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.PAGE_UP, "Pg Up", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.END, "End", repeatOnHold = true),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_UP, "Up", repeatOnHold = true),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_DOWN, "Down", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.PAGE_DOWN, "Pg Dn", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_LEFT, "Left", repeatOnHold = true),
-            AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_DOWN, "Down", repeatOnHold = true),
             AccessoryDeckKeySpec(AccessoryDeckActionId.MOVE_RIGHT, "Right", repeatOnHold = true),
+            AccessoryDeckKeySpec(AccessoryDeckActionId.TAB, "Tab", insertText = "\t"),
         )
         AccessoryDeckPage.NUMERIC -> listOf(
             AccessoryDeckKeySpec(AccessoryDeckActionId.INSERT_TEXT, "/", insertText = "/"),
@@ -219,10 +219,10 @@ internal fun accessoryDeckVisualLabel(
 ): String? =
     when (spec.id) {
         AccessoryDeckActionId.PAGE_DOTS -> page.pageDotsLabel()
-        AccessoryDeckActionId.MOVE_UP -> "˄"
-        AccessoryDeckActionId.MOVE_DOWN -> "˅"
-        AccessoryDeckActionId.MOVE_LEFT -> "‹"
-        AccessoryDeckActionId.MOVE_RIGHT -> "›"
+        AccessoryDeckActionId.MOVE_UP -> "↑"
+        AccessoryDeckActionId.MOVE_DOWN -> "↓"
+        AccessoryDeckActionId.MOVE_LEFT -> "←"
+        AccessoryDeckActionId.MOVE_RIGHT -> "→"
         else -> null
     }
 

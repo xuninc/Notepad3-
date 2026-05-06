@@ -14,7 +14,7 @@ final class KeyboardAccessoryView: UIView {
 
     enum Rows { case single, double }
     enum Arrow { case left, right, up, down }
-    private enum DeckPage: Int, CaseIterable { case edit, navigation, numeric }
+    private enum DeckPage: Int, CaseIterable { case navigation, edit, numeric }
     private enum DeckAction {
         case openDocuments
         case hideKeyboard
@@ -171,7 +171,7 @@ final class KeyboardAccessoryView: UIView {
     private let deckGrid = UIStackView()
     private let deckRightRail = UIStackView()
     private let deckHandle = UIView()
-    private var deckPage: DeckPage = .edit
+    private var deckPage: DeckPage = .navigation
     private var deckButtons: [DeckKeyButton] = []
     private var deckButtonRecords: [(DeckAction, DeckKeyButton)] = []
     private var deckCtrlActive = false
@@ -795,8 +795,8 @@ final class KeyboardAccessoryView: UIView {
 
     private func deckPageDots() -> String {
         switch deckPage {
-        case .edit: return "•··"
-        case .navigation: return "·•·"
+        case .navigation: return "•··"
+        case .edit: return "·•·"
         case .numeric: return "··•"
         }
     }
@@ -811,14 +811,27 @@ final class KeyboardAccessoryView: UIView {
 
     private func nextDeckPage() {
         let nextIndex = (deckPage.rawValue + 1) % DeckPage.allCases.count
-        deckPage = DeckPage(rawValue: nextIndex) ?? .edit
-        installDeckLayout()
+        setDeckPage(DeckPage(rawValue: nextIndex) ?? .navigation, animated: true)
     }
 
     private func previousDeckPage() {
         let nextIndex = (deckPage.rawValue + DeckPage.allCases.count - 1) % DeckPage.allCases.count
-        deckPage = DeckPage(rawValue: nextIndex) ?? .edit
-        installDeckLayout()
+        setDeckPage(DeckPage(rawValue: nextIndex) ?? .navigation, animated: true)
+    }
+
+    private func setDeckPage(_ page: DeckPage, animated: Bool) {
+        deckPage = page
+        guard animated, usesKeyboardDeck, window != nil else {
+            installDeckLayout()
+            return
+        }
+        UIView.transition(
+            with: deckContainer,
+            duration: 0.16,
+            options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState]
+        ) {
+            self.installDeckLayout()
+        }
     }
 
     private var accessoryRowHeight: CGFloat {

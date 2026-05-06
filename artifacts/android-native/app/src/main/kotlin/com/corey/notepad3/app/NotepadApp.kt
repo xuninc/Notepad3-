@@ -19,6 +19,7 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -193,6 +194,24 @@ fun NotepadApp(
         store.updateActive(body = nextBody)
     }
 
+    fun applyEditorSelectionImmediately(selection: TextSelection) {
+        val editText = editorView ?: return
+        val safeSelection = selection.clamped(editText.text?.length ?: active.body.length)
+        if (keyboardSuppressed) {
+            editText.focusWithoutSoftKeyboard()
+        } else if (!editText.isFocused) {
+            editText.requestFocus()
+        }
+        editText.post {
+            val length = editText.text?.length ?: return@post
+            val safeStart = safeSelection.start.coerceIn(0, length)
+            val safeEnd = safeSelection.end.coerceIn(0, length)
+            if (editText.selectionStart != safeStart || editText.selectionEnd != safeEnd) {
+                editText.setSelection(safeStart, safeEnd)
+            }
+        }
+    }
+
     fun insertDateTime() {
         val formatted = LocalDateTime.now().format(
             DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(Locale.getDefault()),
@@ -201,7 +220,9 @@ fun NotepadApp(
     }
 
     fun applySelection(selection: TextSelection) {
-        selections[active.id] = selection.clamped(active.body.length)
+        val safeSelection = selection.clamped(active.body.length)
+        selections[active.id] = safeSelection
+        applyEditorSelectionImmediately(safeSelection)
         shiftAnchor = null
         showMore = false
     }
@@ -340,7 +361,9 @@ fun NotepadApp(
     fun updateCursorSelection(nextCaret: Int) {
         val next = nextCaret.coerceIn(0, active.body.length)
         val anchor = shiftAnchor
-        selections[active.id] = if (anchor == null) TextSelection(next) else TextSelection(anchor, next)
+        val nextSelection = if (anchor == null) TextSelection(next) else TextSelection(anchor, next)
+        selections[active.id] = nextSelection
+        applyEditorSelectionImmediately(nextSelection)
     }
 
     fun moveCursorBy(delta: Int) {
@@ -817,7 +840,7 @@ fun NotepadApp(
                         )
                         Spacer(Modifier.height(2.dp))
                     }
-                    if (layoutMode == EditorLayoutMode.MOBILE) {
+                    if (layoutMode == EditorLayoutMode.MOBILE && !editorFocused && !keyboardSuppressed) {
                         MobileBottomBar(
                             palette = palette,
                             compareEnabled = snapshot.documents.size > 1,
@@ -3593,7 +3616,7 @@ private fun MobileKeyboardAccessory(
         keyboardSuppressed = keyboardSuppressed,
         readOnly = readOnly,
     )
-    var deckPage by rememberSaveable { mutableStateOf(AccessoryDeckPage.EDIT) }
+    var deckPage by rememberSaveable { mutableStateOf(defaultAccessoryDeckPage()) }
     var ctrlActive by rememberSaveable { mutableStateOf(false) }
     var altActive by rememberSaveable { mutableStateOf(false) }
     val stripHeight = when (buttonSize) {
@@ -3666,10 +3689,10 @@ private fun MobileKeyboardAccessory(
             AccessoryDeckActionId.COMPARE -> Icons.Filled.ViewColumn
             AccessoryDeckActionId.MORE -> Icons.Filled.MoreHoriz
             AccessoryDeckActionId.HIDE_KEYBOARD -> Icons.Filled.Keyboard
-            AccessoryDeckActionId.MOVE_UP,
-            AccessoryDeckActionId.MOVE_DOWN,
-            AccessoryDeckActionId.MOVE_LEFT,
-            AccessoryDeckActionId.MOVE_RIGHT -> null
+            AccessoryDeckActionId.MOVE_UP -> Icons.Filled.KeyboardArrowUp
+            AccessoryDeckActionId.MOVE_DOWN -> Icons.Filled.KeyboardArrowDown
+            AccessoryDeckActionId.MOVE_LEFT -> Icons.AutoMirrored.Filled.KeyboardArrowLeft
+            AccessoryDeckActionId.MOVE_RIGHT -> Icons.AutoMirrored.Filled.KeyboardArrowRight
             else -> null
         }
         return AccessoryDeckRenderKey(
@@ -3736,6 +3759,7 @@ private fun MobileKeyboardAccessory(
         modifier = Modifier
             .fillMaxWidth()
             .height((stripHeight + keyHeight * 4 + 42).dp)
+            .animateContentSize()
             .background(deckBackground)
             .border(2.dp, deckBorder)
             .pointerInput(deckPage) {
