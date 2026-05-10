@@ -752,7 +752,7 @@ private final class KbHoldButton: KbButton {
             self?.startRepeating(every: 0.220)
         }
         initialDelayTimer = timer
-        RunLoop.main.add(timer, for: .common)
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     @objc private func pressUp() {
@@ -773,7 +773,7 @@ private final class KbHoldButton: KbButton {
             }
         }
         holdTimer = timer
-        RunLoop.main.add(timer, for: .common)
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func stopAllTimers() {
