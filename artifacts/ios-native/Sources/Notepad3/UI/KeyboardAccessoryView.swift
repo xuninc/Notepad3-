@@ -137,7 +137,7 @@ final class KeyboardAccessoryView: UIView {
         // references that survive `rebuildLayout()` (the cluster never rebuilds).
         clusterShift  = KbButton(symbol: "shift", label: "Shift") { }
         clusterUp     = KbHoldButton(symbol: "arrow.up", label: "Up") { }
-        clusterDelete = KbHoldButton(symbol: "delete.left", label: "Delete") { }
+        clusterDelete = KbHoldButton(symbol: "delete.left", label: "Delete", repeatBehavior: .delete) { }
         clusterUndo   = KbButton(symbol: "arrow.uturn.backward", label: "Undo") { }
         clusterLeft   = KbHoldButton(symbol: "arrow.left", label: "Left") { }
         clusterDown   = KbHoldButton(symbol: "arrow.down", label: "Down") { }
@@ -162,6 +162,10 @@ final class KeyboardAccessoryView: UIView {
             sv.translatesAutoresizingMaskIntoConstraints = false
             sv.showsHorizontalScrollIndicator = false
             sv.alwaysBounceHorizontal = false
+            sv.delaysContentTouches = false
+            sv.canCancelContentTouches = true
+            sv.panGestureRecognizer.delaysTouchesBegan = false
+            sv.panGestureRecognizer.delaysTouchesEnded = false
             sv.keyboardDismissMode = .none
             addSubview(sv)
         }
@@ -603,7 +607,6 @@ private class KbButton: UIControl {
             contentStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
-        addTarget(self, action: #selector(tapped), for: .touchUpInside)
         configureDisplay(size: .medium, contentMode: .iconAndText)
     }
 
@@ -677,9 +680,43 @@ private class KbButton: UIControl {
         }
     }
 
-    @objc private func tapped() {
-        Haptics.selectionChanged()
-        onTap?()
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        expandedHitBounds.contains(point)
+    }
+
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        guard !isDisabled else { return false }
+        isHighlighted = true
+        return true
+    }
+
+    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        isHighlighted = containsInteractivePoint(touch.location(in: self))
+        return true
+    }
+
+    override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+        defer { isHighlighted = false }
+        guard !isDisabled else { return }
+        if let touch, containsInteractivePoint(touch.location(in: self)) {
+            Haptics.selectionChanged()
+            onTap?()
+        }
+    }
+
+    override func cancelTracking(with event: UIEvent?) {
+        isHighlighted = false
+    }
+
+    func containsInteractivePoint(_ point: CGPoint) -> Bool {
+        expandedHitBounds.contains(point)
+    }
+
+    private var expandedHitBounds: CGRect {
+        let minSide: CGFloat = 48
+        let dx = max(0, (minSide - bounds.width) / 2)
+        let dy = max(0, (minSide - bounds.height) / 2)
+        return bounds.insetBy(dx: -dx, dy: -dy)
     }
 
     override var isHighlighted: Bool {
@@ -719,43 +756,105 @@ private class KbButton: UIControl {
 
 // MARK: - KbHoldButton
 
-/// Auto-repeating toolbar button. Fires once immediately on press-in,
-/// waits 280 ms, then fires every 220 ms. After 3 repeats the cadence
-/// tightens to 120 ms; after 6 it drops to 60 ms. Releasing the button
-/// (or touch cancelled) cancels all outstanding timers.
+/// Auto-repeating toolbar button. A quick tap fires once on release unless
+/// the selected repeat behavior fires on press. A held press starts repeating
+/// after a short intent threshold and accelerates until release/cancellation.
 private final class KbHoldButton: KbButton {
+    struct RepeatBehavior {
+        let firesOnPress: Bool
+        let holdDelay: TimeInterval
+        let initialInterval: TimeInterval
+        let secondInterval: TimeInterval
+        let finalInterval: TimeInterval
+        let secondIntervalAfterTicks: Int
+        let finalIntervalAfterTicks: Int
+
+        static let navigation = RepeatBehavior(
+            firesOnPress: false,
+            holdDelay: 0.180,
+            initialInterval: 0.120,
+            secondInterval: 0.090,
+            finalInterval: 0.060,
+            secondIntervalAfterTicks: 3,
+            finalIntervalAfterTicks: 8
+        )
+
+        static let delete = RepeatBehavior(
+            firesOnPress: true,
+            holdDelay: 0.220,
+            initialInterval: 0.070,
+            secondInterval: 0.045,
+            finalInterval: 0.030,
+            secondIntervalAfterTicks: 8,
+            finalIntervalAfterTicks: 24
+        )
+    }
+
     private var holdTimer: Timer?
     private var initialDelayTimer: Timer?
     private var repeatCount: Int = 0
+    private var hasFiredDuringTracking = false
+    private let repeatBehavior: RepeatBehavior
     var tickHandler: () -> Void
 
-    init(symbol: String, label: String? = nil, onTick: @escaping () -> Void) {
+    init(
+        symbol: String,
+        label: String? = nil,
+        repeatBehavior: RepeatBehavior = .navigation,
+        onTick: @escaping () -> Void
+    ) {
         self.tickHandler = onTick
+        self.repeatBehavior = repeatBehavior
         super.init(symbol: symbol, label: label, onTap: {})
-        // Tap handler not used — we drive from touch events instead.
         self.onTap = nil
-        removeTarget(nil, action: nil, for: .touchUpInside)
-        // Wire our own touch handlers.
-        addTarget(self, action: #selector(pressDown), for: .touchDown)
-        addTarget(self, action: #selector(pressUp), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    @objc private func pressDown() {
-        isHighlighted = true
-        Haptics.selectionChanged()
-        tickHandler()
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        guard super.beginTracking(touch, with: event) else { return false }
+        hasFiredDuringTracking = false
         repeatCount = 0
         initialDelayTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.280, repeats: false) { [weak self] _ in
-            self?.startRepeating(every: 0.220)
+        if repeatBehavior.firesOnPress {
+            fireTick(withHaptic: true)
+            hasFiredDuringTracking = true
+        }
+        let timer = Timer(timeInterval: repeatBehavior.holdDelay, repeats: false) { [weak self] _ in
+            guard let self, self.isHighlighted else { return }
+            if !self.hasFiredDuringTracking {
+                self.fireTick(withHaptic: true)
+                self.hasFiredDuringTracking = true
+            }
+            self.startRepeating(every: self.repeatBehavior.initialInterval)
         }
         initialDelayTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+        return true
     }
 
-    @objc private func pressUp() {
+    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        let isInside = containsInteractivePoint(touch.location(in: self))
+        isHighlighted = isInside
+        if !isInside {
+            stopAllTimers()
+        }
+        return true
+    }
+
+    override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+        let endedInside = touch.map { containsInteractivePoint($0.location(in: self)) } ?? true
+        let shouldFireTap = !hasFiredDuringTracking
+            && !isDisabled
+            && endedInside
+        isHighlighted = false
+        stopAllTimers()
+        if shouldFireTap {
+            fireTick(withHaptic: true)
+        }
+    }
+
+    override func cancelTracking(with event: UIEvent?) {
         isHighlighted = false
         stopAllTimers()
     }
@@ -764,12 +863,14 @@ private final class KbHoldButton: KbButton {
         holdTimer?.invalidate()
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.tickHandler()
+            self.fireTick(withHaptic: false)
             self.repeatCount += 1
-            if self.repeatCount == 6 && interval > 0.090 {
-                self.startRepeating(every: 0.060)
-            } else if self.repeatCount == 3 && interval > 0.150 {
-                self.startRepeating(every: 0.120)
+            if self.repeatCount == self.repeatBehavior.finalIntervalAfterTicks
+                && interval > self.repeatBehavior.finalInterval {
+                self.startRepeating(every: self.repeatBehavior.finalInterval)
+            } else if self.repeatCount == self.repeatBehavior.secondIntervalAfterTicks
+                && interval > self.repeatBehavior.secondInterval {
+                self.startRepeating(every: self.repeatBehavior.secondInterval)
             }
         }
         holdTimer = timer
@@ -782,6 +883,13 @@ private final class KbHoldButton: KbButton {
         holdTimer?.invalidate()
         holdTimer = nil
         repeatCount = 0
+    }
+
+    private func fireTick(withHaptic: Bool) {
+        if withHaptic {
+            Haptics.selectionChanged()
+        }
+        tickHandler()
     }
 
     deinit {
