@@ -82,20 +82,35 @@ final class KeyboardAccessoryView: UIView {
     var onShiftToggle: (() -> Void)?
     var onArrow: ((Arrow) -> Void)?
     var onDelete: (() -> Void)?
+    var onEnter: (() -> Void)?
+    var onTab: (() -> Void)?
+    var onHome: (() -> Void)?
+    var onEnd: (() -> Void)?
+    var onPageUp: (() -> Void)?
+    var onPageDown: (() -> Void)?
+    var onInsertText: ((String) -> Void)?
+    var onBonusKeysVisibilityChange: ((Bool) -> Void)?
+    var onPreferredHeightChange: (() -> Void)?
     var onFind: (() -> Void)?
     var onInsertDate: (() -> Void)?
     var onOpenDocs: (() -> Void)?
     var onCompare: (() -> Void)?
     var onMore: (() -> Void)?
+    var onDuplicateLine: (() -> Void)?
+    var onDeleteLine: (() -> Void)?
+    var onSortLines: (() -> Void)?
+    var onTrimSpaces: (() -> Void)?
+    var onGotoLine: (() -> Void)?
 
     // MARK: - Subviews
 
-    private let topScroll = UIScrollView()
-    private let bottomScroll = UIScrollView()
+    private let topScroll = AccessoryToolbarScrollView()
+    private let bottomScroll = AccessoryToolbarScrollView()
     private let topStack = UIStackView()
     private let bottomStack = UIStackView()
     private let topBorder = UIView()
     private let middleBorder = UIView()
+    private let modeSwitchButton: KbButton
 
     // Static "virtual D-pad" cluster pinned to the leading edge. Always
     // visible regardless of accessoryRows, scrolling, or whatever the rest
@@ -117,6 +132,15 @@ final class KeyboardAccessoryView: UIView {
     private var staticActionDividerWidthConstraint: NSLayoutConstraint?
 
     private var palette: Palette = .light
+
+    private let bonusPanel = UIView()
+    private let bonusLeftStack = UIStackView()
+    private let bonusGridStack = UIStackView()
+    private let bonusRightStack = UIStackView()
+    private let bonusPageButton: KbButton
+    private var bonusButtons: [KbButton] = []
+    private var bonusPageIndex = 0
+    private var bonusKeysVisible = false
 
     // Button references we toggle in the scrolling part.
     private weak var hideButton: KbButton?
@@ -143,6 +167,8 @@ final class KeyboardAccessoryView: UIView {
         clusterLeft   = KbHoldButton(symbol: "arrow.left", label: "Left") { }
         clusterDown   = KbHoldButton(symbol: "arrow.down", label: "Down") { }
         clusterRight  = KbHoldButton(symbol: "arrow.right", label: "Right") { }
+        modeSwitchButton = KbButton(symbol: "arrow.left.arrow.right", label: "Keys") { }
+        bonusPageButton = KbButton(symbol: "ellipsis", label: "1/4") { }
         super.init(frame: frame)
         autoresizingMask = [.flexibleWidth]
         setupBase()
@@ -160,9 +186,6 @@ final class KeyboardAccessoryView: UIView {
 
         for sv in [topScroll, bottomScroll] {
             sv.translatesAutoresizingMaskIntoConstraints = false
-            sv.showsHorizontalScrollIndicator = false
-            sv.alwaysBounceHorizontal = false
-            sv.keyboardDismissMode = .none
             addSubview(sv)
         }
         for st in [topStack, bottomStack] {
@@ -174,6 +197,8 @@ final class KeyboardAccessoryView: UIView {
         }
         topScroll.addSubview(topStack)
         bottomScroll.addSubview(bottomStack)
+        modeSwitchButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(modeSwitchButton)
 
         // Build the fixed edit cluster: a 3x2 arrow/edit grid.
         clusterContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -199,6 +224,18 @@ final class KeyboardAccessoryView: UIView {
         addSubview(clusterDivider)
         staticActionDivider.translatesAutoresizingMaskIntoConstraints = false
         addSubview(staticActionDivider)
+
+        bonusPanel.translatesAutoresizingMaskIntoConstraints = false
+        bonusPanel.isHidden = true
+        addSubview(bonusPanel)
+        for stack in [bonusLeftStack, bonusGridStack, bonusRightStack] {
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            stack.axis = .vertical
+            stack.alignment = .fill
+            stack.distribution = .fillEqually
+            stack.spacing = 6
+            bonusPanel.addSubview(stack)
+        }
 
         let clusterWidth = clusterContainer.widthAnchor.constraint(equalToConstant: 134)
         let dividerWidth = clusterDivider.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
@@ -265,6 +302,8 @@ final class KeyboardAccessoryView: UIView {
         clusterLeft.tickHandler   = { [weak self] in self?.onArrow?(.left) }
         clusterDown.tickHandler   = { [weak self] in self?.onArrow?(.down) }
         clusterRight.tickHandler  = { [weak self] in self?.onArrow?(.right) }
+        modeSwitchButton.onTap = { [weak self] in self?.toggleBonusKeys() }
+        bonusPageButton.onTap = { [weak self] in self?.advanceBonusPage() }
     }
 
     private var staticClusterButtonIds: Set<AccessoryToolbarButton> {
@@ -290,6 +329,21 @@ final class KeyboardAccessoryView: UIView {
     }
 
     private func updateStaticClusterVisibility() {
+        if bonusKeysVisible {
+            for view in [clusterShift, clusterUp, clusterDelete, clusterLeft, clusterDown, clusterRight] {
+                view.isHidden = true
+            }
+            clusterUndoRedo.isHidden = true
+            clusterContainer.isHidden = true
+            clusterDivider.isHidden = true
+            staticActionDivider.isHidden = true
+            clusterWidthConstraint?.constant = 0
+            clusterDividerWidthConstraint?.constant = 0
+            staticActionDividerWidthConstraint?.constant = 0
+            updateUndoRedoEnabled()
+            return
+        }
+
         let clusterPairs: [(AccessoryToolbarButton, UIView)] = [
             (.shift, clusterShift),
             (.moveUp, clusterUp),
@@ -329,7 +383,11 @@ final class KeyboardAccessoryView: UIView {
     override var intrinsicContentSize: CGSize {
         // The static cluster is two rows tall even when the scrolling toolbar
         // is single-row. Grow for Large buttons so controls do not clip.
-        CGSize(width: UIView.noIntrinsicMetric, height: max(88, accessoryRowHeight * 2))
+        let compactHeight = max(88, accessoryRowHeight * 2)
+        let height = bonusKeysVisible
+            ? accessoryRowHeight + (1 / UIScreen.main.scale) + bonusPanelHeight
+            : compactHeight
+        return CGSize(width: UIView.noIntrinsicMetric, height: height)
     }
 
     // MARK: - Layout
@@ -339,6 +397,7 @@ final class KeyboardAccessoryView: UIView {
     private func rebuildLayout() {
         dismissUndoRedoFlyout(animated: false)
         updateStaticClusterVisibility()
+        updateModeSwitchButton()
         // Tear down existing button subviews / constraints.
         NSLayoutConstraint.deactivate(activeConstraints)
         activeConstraints.removeAll()
@@ -351,6 +410,65 @@ final class KeyboardAccessoryView: UIView {
 
         // Build the full ordered list of items.
         let items = makeItems()
+
+        if bonusKeysVisible {
+            install(items: items, into: topStack)
+            bottomScroll.isHidden = true
+            bonusPanel.isHidden = false
+            middleBorder.isHidden = false
+            rebuildBonusPanel()
+
+            let rowHeight = accessoryRowHeight
+            activeConstraints = [
+                topScroll.topAnchor.constraint(equalTo: topAnchor),
+                topScroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+                topScroll.trailingAnchor.constraint(equalTo: modeSwitchButton.leadingAnchor, constant: -4),
+                topScroll.heightAnchor.constraint(equalToConstant: rowHeight),
+
+                modeSwitchButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+                modeSwitchButton.centerYAnchor.constraint(equalTo: topScroll.centerYAnchor),
+                modeSwitchButton.widthAnchor.constraint(equalToConstant: 58),
+                modeSwitchButton.heightAnchor.constraint(equalToConstant: max(34, rowHeight - 8)),
+
+                middleBorder.topAnchor.constraint(equalTo: topScroll.bottomAnchor),
+                middleBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
+                middleBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
+                middleBorder.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+
+                bonusPanel.topAnchor.constraint(equalTo: middleBorder.bottomAnchor),
+                bonusPanel.leadingAnchor.constraint(equalTo: leadingAnchor),
+                bonusPanel.trailingAnchor.constraint(equalTo: trailingAnchor),
+                bonusPanel.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+                topStack.topAnchor.constraint(equalTo: topScroll.contentLayoutGuide.topAnchor, constant: 4),
+                topStack.leadingAnchor.constraint(equalTo: topScroll.contentLayoutGuide.leadingAnchor, constant: 4),
+                topStack.trailingAnchor.constraint(equalTo: topScroll.contentLayoutGuide.trailingAnchor, constant: -4),
+                topStack.bottomAnchor.constraint(equalTo: topScroll.contentLayoutGuide.bottomAnchor, constant: -4),
+                topStack.heightAnchor.constraint(equalTo: topScroll.frameLayoutGuide.heightAnchor, constant: -8),
+
+                bonusLeftStack.topAnchor.constraint(equalTo: bonusPanel.topAnchor, constant: 8),
+                bonusLeftStack.leadingAnchor.constraint(equalTo: bonusPanel.leadingAnchor, constant: 8),
+                bonusLeftStack.bottomAnchor.constraint(equalTo: bonusPanel.bottomAnchor, constant: -8),
+                bonusLeftStack.widthAnchor.constraint(equalToConstant: bonusSideColumnWidth),
+
+                bonusRightStack.topAnchor.constraint(equalTo: bonusPanel.topAnchor, constant: 8),
+                bonusRightStack.trailingAnchor.constraint(equalTo: bonusPanel.trailingAnchor, constant: -8),
+                bonusRightStack.bottomAnchor.constraint(equalTo: bonusPanel.bottomAnchor, constant: -8),
+                bonusRightStack.widthAnchor.constraint(equalToConstant: bonusSideColumnWidth),
+
+                bonusGridStack.topAnchor.constraint(equalTo: bonusPanel.topAnchor, constant: 8),
+                bonusGridStack.leadingAnchor.constraint(equalTo: bonusLeftStack.trailingAnchor, constant: 8),
+                bonusGridStack.trailingAnchor.constraint(equalTo: bonusRightStack.leadingAnchor, constant: -8),
+                bonusGridStack.bottomAnchor.constraint(equalTo: bonusPanel.bottomAnchor, constant: -8),
+            ]
+            NSLayoutConstraint.activate(activeConstraints)
+            notifyPreferredHeightChanged()
+            applyDisplayOptionsToButtons()
+            applyPaletteToButtons()
+            return
+        }
+
+        bonusPanel.isHidden = true
 
         // Split across rows if requested.
         // Scrolling part starts after the cluster + divider.
@@ -370,17 +488,22 @@ final class KeyboardAccessoryView: UIView {
             activeConstraints = [
                 topScroll.topAnchor.constraint(equalTo: topAnchor),
                 topScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
-                topScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+                topScroll.trailingAnchor.constraint(equalTo: modeSwitchButton.leadingAnchor, constant: -4),
                 topScroll.heightAnchor.constraint(equalToConstant: rowHeight),
+
+                modeSwitchButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+                modeSwitchButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+                modeSwitchButton.widthAnchor.constraint(equalToConstant: 58),
+                modeSwitchButton.heightAnchor.constraint(equalToConstant: max(34, accessoryRowHeight)),
 
                 middleBorder.topAnchor.constraint(equalTo: topScroll.bottomAnchor),
                 middleBorder.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
-                middleBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
+                middleBorder.trailingAnchor.constraint(equalTo: modeSwitchButton.leadingAnchor, constant: -4),
                 middleBorder.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
 
                 bottomScroll.topAnchor.constraint(equalTo: middleBorder.bottomAnchor),
                 bottomScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
-                bottomScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+                bottomScroll.trailingAnchor.constraint(equalTo: modeSwitchButton.leadingAnchor, constant: -4),
                 bottomScroll.bottomAnchor.constraint(equalTo: bottomAnchor),
 
                 topStack.topAnchor.constraint(equalTo: topScroll.contentLayoutGuide.topAnchor, constant: 4),
@@ -406,7 +529,12 @@ final class KeyboardAccessoryView: UIView {
                 topScroll.centerYAnchor.constraint(equalTo: centerYAnchor),
                 topScroll.heightAnchor.constraint(equalToConstant: rowHeight),
                 topScroll.leadingAnchor.constraint(equalTo: scrollLeading, constant: 4),
-                topScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+                topScroll.trailingAnchor.constraint(equalTo: modeSwitchButton.leadingAnchor, constant: -4),
+
+                modeSwitchButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+                modeSwitchButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+                modeSwitchButton.widthAnchor.constraint(equalToConstant: 58),
+                modeSwitchButton.heightAnchor.constraint(equalToConstant: max(34, accessoryRowHeight)),
 
                 topStack.topAnchor.constraint(equalTo: topScroll.contentLayoutGuide.topAnchor, constant: 4),
                 topStack.leadingAnchor.constraint(equalTo: topScroll.contentLayoutGuide.leadingAnchor, constant: 4),
@@ -416,7 +544,7 @@ final class KeyboardAccessoryView: UIView {
             ]
         }
         NSLayoutConstraint.activate(activeConstraints)
-        invalidateIntrinsicContentSize()
+        notifyPreferredHeightChanged()
         applyDisplayOptionsToButtons()
         applyPaletteToButtons()
     }
@@ -426,6 +554,18 @@ final class KeyboardAccessoryView: UIView {
         case .small: return 40
         case .medium: return 44
         case .large: return 52
+        }
+    }
+
+    private var bonusPanelHeight: CGFloat {
+        max(244, accessoryRowHeight * 4 + 68)
+    }
+
+    private var bonusSideColumnWidth: CGFloat {
+        switch buttonSize {
+        case .small: return 48
+        case .medium: return 54
+        case .large: return 62
         }
     }
 
@@ -545,6 +685,261 @@ final class KeyboardAccessoryView: UIView {
         return result
     }
 
+    func setBonusKeysVisible(_ visible: Bool, notify: Bool = false) {
+        guard bonusKeysVisible != visible else { return }
+        bonusKeysVisible = visible
+        rebuildLayout()
+        if notify {
+            onBonusKeysVisibilityChange?(visible)
+        }
+    }
+
+    private func toggleBonusKeys() {
+        setBonusKeysVisible(!bonusKeysVisible, notify: true)
+        Haptics.selectionChanged()
+    }
+
+    private func advanceBonusPage() {
+        bonusPageIndex = (bonusPageIndex + 1) % bonusPages.count
+        rebuildBonusPanel()
+        applyDisplayOptionsToButtons()
+        applyPaletteToButtons()
+        Haptics.selectionChanged()
+    }
+
+    private func updateModeSwitchButton() {
+        modeSwitchButton.setSymbol(bonusKeysVisible ? "keyboard" : "arrow.left.arrow.right")
+        modeSwitchButton.setTitle(bonusKeysVisible ? "Kbd" : "Keys")
+        modeSwitchButton.isActive = bonusKeysVisible
+    }
+
+    private func notifyPreferredHeightChanged() {
+        invalidateIntrinsicContentSize()
+        onPreferredHeightChange?()
+    }
+
+    private func rebuildBonusPanel() {
+        for stack in [bonusLeftStack, bonusGridStack, bonusRightStack] {
+            stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
+        }
+        bonusButtons.removeAll()
+        bonusPageIndex = max(0, min(bonusPageIndex, bonusPages.count - 1))
+        bonusPageButton.setTitle("\(bonusPageIndex + 1)/\(bonusPages.count)")
+
+        let leftButtons: [KbButton] = [
+            makeBonusButton(symbol: "doc.on.doc", label: "Copy") { [weak self] in self?.onCopy?() },
+            makeBonusButton(symbol: "scissors", label: "Cut") { [weak self] in self?.onCut?() },
+            makeBonusButton(symbol: "doc.on.clipboard", label: "Paste") { [weak self] in self?.onPaste?() },
+            bonusPageButton,
+        ]
+        leftButtons.forEach { bonusLeftStack.addArrangedSubview($0) }
+
+        let rows = bonusPages[bonusPageIndex]
+        for row in rows {
+            let rowStack = UIStackView()
+            rowStack.translatesAutoresizingMaskIntoConstraints = false
+            rowStack.axis = .horizontal
+            rowStack.alignment = .fill
+            rowStack.distribution = .fillEqually
+            rowStack.spacing = 6
+            for spec in row {
+                rowStack.addArrangedSubview(makeBonusButton(spec))
+            }
+            bonusGridStack.addArrangedSubview(rowStack)
+        }
+
+        let backspace = makeBonusHoldButton(
+            symbol: "delete.left",
+            label: "Delete",
+            repeatBehavior: .delete
+        ) { [weak self] in self?.onDelete?() }
+        let enter = makeBonusButton(symbol: "return", label: "Enter") { [weak self] in self?.onEnter?() }
+        bonusRightStack.addArrangedSubview(backspace)
+        bonusRightStack.addArrangedSubview(enter)
+    }
+
+    private struct BonusKeySpec {
+        let symbol: String
+        let label: String
+        let contentMode: AccessoryToolbarContentMode
+        let repeatBehavior: KbHoldButton.RepeatBehavior?
+        let action: (KeyboardAccessoryView) -> Void
+    }
+
+    private var bonusPages: [[[BonusKeySpec]]] {
+        [
+            [
+                key("house", "Home") { $0.onHome?() },
+                holdKey("arrow.up", "Up") { $0.onArrow?(.up) },
+                key("arrow.up.to.line", "Pg Up") { $0.onPageUp?() },
+                key("line.3.horizontal", "End") { $0.onEnd?() },
+                holdKey("arrow.left", "Left") { $0.onArrow?(.left) },
+                holdKey("arrow.down", "Down") { $0.onArrow?(.down) },
+                holdKey("arrow.right", "Right") { $0.onArrow?(.right) },
+                key("arrow.right.to.line", "Tab") { $0.onTab?() },
+                key("textformat.abc", "Word") { $0.onSelectWord?() },
+                key("text.line.first.and.arrowtriangle.forward", "Line") { $0.onSelectLine?() },
+                key("character.textbox", "All") { $0.onSelectAll?() },
+                key("arrow.uturn.backward", "Undo/Redo") { view in
+                    view.showUndoRedoFlyout(from: view.bonusPageButton)
+                },
+                key("magnifyingglass", "Find") { $0.onFind?() },
+                key("eye", "Read") { $0.onReadToggle?() },
+                key("clock", "Date") { $0.onInsertDate?() },
+                key("ellipsis.circle", "More") { $0.onMore?() },
+            ],
+            [
+                textKey("/", "/") { $0.onInsertText?("/") },
+                textKey("7", "7") { $0.onInsertText?("7") },
+                textKey("8", "8") { $0.onInsertText?("8") },
+                textKey("9", "9") { $0.onInsertText?("9") },
+                textKey("*", "*") { $0.onInsertText?("*") },
+                textKey("4", "4") { $0.onInsertText?("4") },
+                textKey("5", "5") { $0.onInsertText?("5") },
+                textKey("6", "6") { $0.onInsertText?("6") },
+                textKey("-", "-") { $0.onInsertText?("-") },
+                textKey("1", "1") { $0.onInsertText?("1") },
+                textKey("2", "2") { $0.onInsertText?("2") },
+                textKey("3", "3") { $0.onInsertText?("3") },
+                textKey("+", "+") { $0.onInsertText?("+") },
+                textKey("0", "0") { $0.onInsertText?("0") },
+                textKey(".", ".") { $0.onInsertText?(".") },
+                textKey(",", ",") { $0.onInsertText?(",") },
+            ],
+            [
+                textKey("(", "(") { $0.onInsertText?("(") },
+                textKey(")", ")") { $0.onInsertText?(")") },
+                textKey("[", "[") { $0.onInsertText?("[") },
+                textKey("]", "]") { $0.onInsertText?("]") },
+                textKey("{", "{") { $0.onInsertText?("{") },
+                textKey("}", "}") { $0.onInsertText?("}") },
+                textKey("<", "<") { $0.onInsertText?("<") },
+                textKey(">", ">") { $0.onInsertText?(">") },
+                textKey("\"", "\"") { $0.onInsertText?("\"") },
+                textKey("'", "'") { $0.onInsertText?("'") },
+                textKey("=", "=") { $0.onInsertText?("=") },
+                textKey("_", "_") { $0.onInsertText?("_") },
+                textKey(":", ":") { $0.onInsertText?(":") },
+                textKey(";", ";") { $0.onInsertText?(";") },
+                textKey("\\", "\\") { $0.onInsertText?("\\") },
+                textKey("|", "|") { $0.onInsertText?("|") },
+            ],
+            [
+                key("plus.square.on.square", "Duplicate") { $0.onDuplicateLine?() },
+                key("minus.square", "Delete line") { $0.onDeleteLine?() },
+                key("arrow.up.arrow.down", "Sort") { $0.onSortLines?() },
+                key("scissors.circle", "Trim") { $0.onTrimSpaces?() },
+                key("arrow.down.to.line", "Go to") { $0.onGotoLine?() },
+                key("folder", "Open") { $0.onOpenDocs?() },
+                key("rectangle.split.1x2", "Compare") { $0.onCompare?() },
+                key("doc.text.magnifyingglass", "Docs") { $0.onOpenDocs?() },
+                key("shift", "Shift") { $0.onShiftToggle?() },
+                key("eye.slash", "Read") { $0.onReadToggle?() },
+                key("keyboard", "Kbd") { $0.setBonusKeysVisible(false, notify: true) },
+                key("ellipsis.circle", "More") { $0.onMore?() },
+                key("textformat.abc", "Word") { $0.onSelectWord?() },
+                key("text.line.first.and.arrowtriangle.forward", "Line") { $0.onSelectLine?() },
+                key("character.textbox", "All") { $0.onSelectAll?() },
+                key("magnifyingglass", "Find") { $0.onFind?() },
+            ],
+        ].map { page in
+            stride(from: 0, to: page.count, by: 4).map { start in
+                Array(page[start..<min(start + 4, page.count)])
+            }
+        }
+    }
+
+    private func key(
+        _ symbol: String,
+        _ label: String,
+        action: @escaping (KeyboardAccessoryView) -> Void
+    ) -> BonusKeySpec {
+        BonusKeySpec(
+            symbol: symbol,
+            label: label,
+            contentMode: .iconAndText,
+            repeatBehavior: nil,
+            action: action
+        )
+    }
+
+    private func holdKey(
+        _ symbol: String,
+        _ label: String,
+        action: @escaping (KeyboardAccessoryView) -> Void
+    ) -> BonusKeySpec {
+        BonusKeySpec(
+            symbol: symbol,
+            label: label,
+            contentMode: .iconAndText,
+            repeatBehavior: .navigation,
+            action: action
+        )
+    }
+
+    private func textKey(
+        _ symbol: String,
+        _ label: String,
+        action: @escaping (KeyboardAccessoryView) -> Void
+    ) -> BonusKeySpec {
+        BonusKeySpec(
+            symbol: symbol,
+            label: label,
+            contentMode: .textOnly,
+            repeatBehavior: nil,
+            action: action
+        )
+    }
+
+    private func makeBonusButton(_ spec: BonusKeySpec) -> KbButton {
+        if let repeatBehavior = spec.repeatBehavior {
+            return makeBonusHoldButton(
+                symbol: spec.symbol,
+                label: spec.label,
+                contentMode: spec.contentMode,
+                repeatBehavior: repeatBehavior
+            ) { [weak self] in
+                guard let self else { return }
+                spec.action(self)
+            }
+        }
+        return makeBonusButton(
+            symbol: spec.symbol,
+            label: spec.label,
+            contentMode: spec.contentMode
+        ) { [weak self] in
+            guard let self else { return }
+            spec.action(self)
+        }
+    }
+
+    private func makeBonusButton(
+        symbol: String,
+        label: String,
+        contentMode: AccessoryToolbarContentMode = .iconAndText,
+        action: @escaping () -> Void
+    ) -> KbButton {
+        let button = KbButton(symbol: symbol, label: label, onTap: action)
+        button.forcedContentMode = contentMode
+        button.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
+        bonusButtons.append(button)
+        return button
+    }
+
+    private func makeBonusHoldButton(
+        symbol: String,
+        label: String,
+        contentMode: AccessoryToolbarContentMode = .iconAndText,
+        repeatBehavior: KbHoldButton.RepeatBehavior = .navigation,
+        action: @escaping () -> Void
+    ) -> KbHoldButton {
+        let button = KbHoldButton(symbol: symbol, label: label, repeatBehavior: repeatBehavior, onTick: action)
+        button.forcedContentMode = contentMode
+        button.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
+        bonusButtons.append(button)
+        return button
+    }
+
     private static func makeUndoRedoImage() -> UIImage? {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
         guard
@@ -570,6 +965,7 @@ final class KeyboardAccessoryView: UIView {
     func applyPalette(_ p: Palette) {
         palette = p
         backgroundColor = p.card
+        bonusPanel.backgroundColor = p.card
         topBorder.backgroundColor = p.border
         middleBorder.backgroundColor = p.border
         clusterDivider.backgroundColor = p.border
@@ -674,7 +1070,10 @@ final class KeyboardAccessoryView: UIView {
         for btn in allButtons {
             btn.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
         }
-        for btn in [clusterShift, clusterUp, clusterDelete, clusterUndoRedo, clusterLeft, clusterDown, clusterRight] {
+        for btn in [clusterShift, clusterUp, clusterDelete, clusterUndoRedo, clusterLeft, clusterDown, clusterRight, modeSwitchButton, bonusPageButton] {
+            btn.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
+        }
+        for btn in bonusButtons {
             btn.configureDisplay(size: buttonSize, contentMode: accessoryContentMode)
         }
         invalidateIntrinsicContentSize()
@@ -688,7 +1087,10 @@ final class KeyboardAccessoryView: UIView {
             sep.backgroundColor = palette.border
         }
         // Cluster buttons live outside `allButtons` (they're never rebuilt).
-        for btn in [clusterShift, clusterUp, clusterDelete, clusterUndoRedo, clusterLeft, clusterDown, clusterRight] {
+        for btn in [clusterShift, clusterUp, clusterDelete, clusterUndoRedo, clusterLeft, clusterDown, clusterRight, modeSwitchButton, bonusPageButton] {
+            btn.applyPalette(palette)
+        }
+        for btn in bonusButtons {
             btn.applyPalette(palette)
         }
     }
@@ -700,6 +1102,7 @@ private class KbButton: UIControl {
     let symbolName: String
     private(set) var label: String?
     var onTap: (() -> Void)?
+    var forcedContentMode: AccessoryToolbarContentMode?
 
     var isActive: Bool = false
     var isDisabled: Bool = false {
@@ -803,6 +1206,7 @@ private class KbButton: UIControl {
     func configureDisplay(size: AccessoryToolbarButtonSize, contentMode: AccessoryToolbarContentMode) {
         currentSize = size
         currentContentMode = contentMode
+        let effectiveContentMode = forcedContentMode ?? contentMode
         minWidthConstraint?.constant = minWidth(for: size)
         minHeightConstraint?.constant = minHeight(for: size)
         if let customImage {
@@ -816,7 +1220,7 @@ private class KbButton: UIControl {
         titleLabel.font = .systemFont(ofSize: fontSize(for: size), weight: .medium)
 
         let hasText = !(label ?? "").isEmpty
-        switch contentMode {
+        switch effectiveContentMode {
         case .iconAndText:
             imageView.isHidden = false
             titleLabel.isHidden = !hasText
@@ -1056,5 +1460,26 @@ private final class KbHoldButton: KbButton {
 
     deinit {
         stopAllTimers()
+    }
+}
+
+private final class AccessoryToolbarScrollView: UIScrollView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        showsHorizontalScrollIndicator = false
+        alwaysBounceHorizontal = false
+        delaysContentTouches = true
+        canCancelContentTouches = true
+        directionalLockEnabled = true
+        keyboardDismissMode = .none
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+        if view is UIControl {
+            return true
+        }
+        return super.touchesShouldCancel(in: view)
     }
 }

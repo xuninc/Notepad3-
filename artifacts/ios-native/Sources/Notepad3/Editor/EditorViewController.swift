@@ -394,6 +394,10 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         accessory.hiddenButtons = prefs.hiddenAccessoryButtons
         accessory.keyboardHidden = keyboardSuppressed
         accessory.onHide = { [weak self] in self?.toggleKeyboardSuppression() }
+        accessory.onPreferredHeightChange = { [weak self] in self?.updateKeyboardAccessoryHeight(animated: true) }
+        accessory.onBonusKeysVisibilityChange = { [weak self] visible in
+            self?.setBonusKeysVisible(visible)
+        }
         accessory.onReadToggle = { [weak self] in self?.readMode.toggle() }
         accessory.onUndo = { [weak self] in self?.textView.undoManager?.undo() }
         accessory.onRedo = { [weak self] in self?.textView.undoManager?.redo() }
@@ -406,11 +410,23 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         accessory.onArrow = { [weak self] dir in self?.moveCursor(direction: dir) }
         accessory.onShiftToggle = { [weak self] in self?.toggleShift() }
         accessory.onDelete = { [weak self] in self?.deleteBackwardFromCaret() }
+        accessory.onEnter = { [weak self] in self?.insertText("\n") }
+        accessory.onTab = { [weak self] in self?.insertText("\t") }
+        accessory.onHome = { [weak self] in self?.moveCursorToLineBoundary(.start) }
+        accessory.onEnd = { [weak self] in self?.moveCursorToLineBoundary(.end) }
+        accessory.onPageUp = { [weak self] in self?.moveCursorByPage(direction: -1) }
+        accessory.onPageDown = { [weak self] in self?.moveCursorByPage(direction: 1) }
+        accessory.onInsertText = { [weak self] value in self?.insertText(value) }
         accessory.onFind = { [weak self] in self?.toggleFind() }
         accessory.onInsertDate = { [weak self] in self?.insertText(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)) }
         accessory.onOpenDocs = { [weak self] in self?.presentDocsList() }
         accessory.onCompare = { [weak self] in self?.presentCompare() }
         accessory.onMore = { [weak self] in self?.presentMobileMore() }
+        accessory.onDuplicateLine = { [weak self] in self?.duplicateCurrentLine() }
+        accessory.onDeleteLine = { [weak self] in self?.deleteCurrentLine() }
+        accessory.onSortLines = { [weak self] in self?.sortLines() }
+        accessory.onTrimSpaces = { [weak self] in self?.trimTrailingSpaces() }
+        accessory.onGotoLine = { [weak self] in self?.presentGotoLine() }
         view.addSubview(accessory)
     }
 
@@ -791,7 +807,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         keyboardAccessory.accessoryContentMode = prefs.accessoryToolbarContentMode
         keyboardAccessory.staticButtons = prefs.staticAccessoryButtons
         keyboardAccessory.hiddenButtons = prefs.hiddenAccessoryButtons
-        bottomToolbarHeight?.constant = keyboardAccessory.preferredHeight
+        updateKeyboardAccessoryHeight(animated: false)
         // Custom palette may have changed
         applyPalette()
     }
@@ -1057,6 +1073,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func insertText(_ value: String) {
+        ensureEditorCaretForToolbarNavigation()
         let sel = textView.selectedRange
         let ns = (textView.text ?? "") as NSString
         let newBody = ns.replacingCharacters(in: sel, with: value)
@@ -1130,6 +1147,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     }
 
     private func deleteBackwardFromCaret() {
+        ensureEditorCaretForToolbarNavigation()
         // Empty selection: delete the character before the caret.
         // Non-empty selection: delete the selected range.
         let r = textView.selectedRange
@@ -1158,6 +1176,30 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         Haptics.selectionChanged()
     }
 
+    private func setBonusKeysVisible(_ visible: Bool) {
+        if visible {
+            setKeyboardSuppressed(true, focusIfShowing: false)
+            ensureEditorCaretForToolbarNavigation()
+        } else {
+            setKeyboardSuppressed(false, focusIfShowing: true)
+        }
+        updateKeyboardAccessoryHeight(animated: true)
+    }
+
+    private func updateKeyboardAccessoryHeight(animated: Bool) {
+        guard let bottomToolbarHeight else { return }
+        let target = keyboardAccessory.preferredHeight
+        guard abs(bottomToolbarHeight.constant - target) > 0.5 else { return }
+        bottomToolbarHeight.constant = target
+
+        let updates = { self.view.layoutIfNeeded() }
+        if animated {
+            UIView.animate(withDuration: 0.16, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+        } else {
+            updates()
+        }
+    }
+
     private func setKeyboardSuppressed(_ suppressed: Bool, focusIfShowing: Bool) {
         keyboardSuppressed = suppressed
         keyboardAccessory.keyboardHidden = suppressed
@@ -1166,6 +1208,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             textView.reloadInputViews()
             textView.resignFirstResponder()
         } else {
+            keyboardAccessory.setBonusKeysVisible(false, notify: false)
             textView.inputView = nil
             textView.reloadInputViews()
             if focusIfShowing && !readMode {
@@ -1224,19 +1267,17 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         return max(0, overlap - view.safeAreaInsets.bottom)
     }
 
+    private enum LineBoundary {
+        case start, end
+    }
+
     private func moveCursor(direction: KeyboardAccessoryView.Arrow) {
         ensureEditorCaretForToolbarNavigation()
         let ns = (textView.text ?? "") as NSString
 
         // The "moving end" of the selection: the side opposite the anchor
         // when shift is active, or just the caret otherwise.
-        let movingEnd: Int
-        if let anchor = shiftAnchor {
-            let r = textView.selectedRange
-            movingEnd = (r.location == anchor) ? r.location + r.length : r.location
-        } else {
-            movingEnd = textView.selectedRange.location
-        }
+        let movingEnd = toolbarMovingSelectionEnd()
 
         let newCaret: Int
         switch direction {
@@ -1252,13 +1293,49 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             newCaret = visuallyMovedCaret(from: movingEnd, fallbackText: ns, direction: 1)
         }
 
+        applyToolbarCaret(newCaret)
+    }
+
+    private func moveCursorToLineBoundary(_ boundary: LineBoundary) {
+        ensureEditorCaretForToolbarNavigation()
+        let ns = (textView.text ?? "") as NSString
+        let movingEnd = toolbarMovingSelectionEnd()
+        let (lineStart, lineEnd) = lineRange(in: ns, at: movingEnd)
+        preferredVerticalCaretX = nil
+        applyToolbarCaret(boundary == .start ? lineStart : lineEnd)
+    }
+
+    private func moveCursorByPage(direction: Int) {
+        ensureEditorCaretForToolbarNavigation()
+        let ns = (textView.text ?? "") as NSString
+        let lineHeight = max(1, textView.font?.lineHeight ?? 18)
+        let visibleHeight = max(lineHeight, textView.bounds.height - textView.textContainerInset.top - textView.textContainerInset.bottom)
+        let lines = max(1, Int((visibleHeight / lineHeight) * 0.85))
+        var caret = toolbarMovingSelectionEnd()
+        for _ in 0..<lines {
+            caret = visuallyMovedCaret(from: caret, fallbackText: ns, direction: direction)
+        }
+        applyToolbarCaret(caret)
+    }
+
+    private func toolbarMovingSelectionEnd() -> Int {
+        if let anchor = shiftAnchor {
+            let r = textView.selectedRange
+            return (r.location == anchor) ? r.location + r.length : r.location
+        }
+        return textView.selectedRange.location
+    }
+
+    private func applyToolbarCaret(_ newCaret: Int) {
+        let nsLength = ((textView.text ?? "") as NSString).length
+        let clampedCaret = max(0, min(newCaret, nsLength))
         programmaticSelectionChange = true
         if let anchor = shiftAnchor {
-            let lo = min(anchor, newCaret)
-            let hi = max(anchor, newCaret)
+            let lo = min(anchor, clampedCaret)
+            let hi = max(anchor, clampedCaret)
             textView.selectedRange = NSRange(location: lo, length: hi - lo)
         } else {
-            textView.selectedRange = NSRange(location: newCaret, length: 0)
+            textView.selectedRange = NSRange(location: clampedCaret, length: 0)
         }
         programmaticSelectionChange = false
         textView.scrollRangeToVisible(textView.selectedRange)
