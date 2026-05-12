@@ -59,6 +59,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
     private var toolbarOpen = true
     private var keyboardSuppressed = false
     private var bottomToolbarHeight: NSLayoutConstraint?
+    private var bottomToolbarBottom: NSLayoutConstraint?
+    private var keyboardNotificationTokens: [NSObjectProtocol] = []
+    private var latestKeyboardFrameInScreen: CGRect?
     private var preferredVerticalCaretX: CGFloat?
 
     // Selection-extension state for the bottom toolbar's Shift toggle.
@@ -116,6 +119,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         view.addSubview(pointerOverlay)
 
         buildConstraints()
+        configureKeyboardFrameTracking()
         applyLayoutMode(animated: false)
         applyPalette()
 
@@ -152,9 +156,15 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         themes.updateSystemStyle(isDark: traitCollection.userInterfaceStyle == .dark)
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateKeyboardAccessoryPosition(animated: false)
+    }
+
     deinit {
         pendingHighlight?.cancel()
         store.flushPendingPersistence()
+        keyboardNotificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
         if let t = notesToken { store.unobserve(t) }
         if let t = themeToken { themes.unobserve(t) }
         if let t = prefsToken { prefs.unobserve(t) }
@@ -466,7 +476,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         ]
 
         let bottomToolbarHeight = keyboardAccessory.heightAnchor.constraint(equalToConstant: keyboardAccessory.preferredHeight)
+        let bottomToolbarBottom = keyboardAccessory.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         self.bottomToolbarHeight = bottomToolbarHeight
+        self.bottomToolbarBottom = bottomToolbarBottom
 
         // Classic mode: [findBar] [titleBar] [aeroMenu] [classicToolbar] [tabStrip]
         //               [separator] [lineGutter + textView] [statusBar] [bottom toolbar@keyboard]
@@ -507,7 +519,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
             keyboardAccessory.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             keyboardAccessory.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            keyboardAccessory.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            bottomToolbarBottom,
             bottomToolbarHeight,
         ]
 
@@ -1160,6 +1172,56 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
                 textView.becomeFirstResponder()
             }
         }
+    }
+
+    private func configureKeyboardFrameTracking() {
+        guard keyboardNotificationTokens.isEmpty else { return }
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            UIResponder.keyboardWillChangeFrameNotification,
+            UIResponder.keyboardWillHideNotification,
+        ]
+        keyboardNotificationTokens = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                self?.handleKeyboardFrameNotification(note)
+            }
+        }
+        updateKeyboardAccessoryPosition(animated: false)
+    }
+
+    private func handleKeyboardFrameNotification(_ note: Notification) {
+        if note.name == UIResponder.keyboardWillHideNotification {
+            latestKeyboardFrameInScreen = nil
+        } else {
+            latestKeyboardFrameInScreen = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+        }
+        updateKeyboardAccessoryPosition(animated: true, notification: note)
+    }
+
+    private func updateKeyboardAccessoryPosition(animated: Bool, notification: Notification? = nil) {
+        guard let bottomToolbarBottom else { return }
+        let target = -keyboardBottomOverlapPastSafeArea()
+        guard abs(bottomToolbarBottom.constant - target) > 0.5 else { return }
+        bottomToolbarBottom.constant = target
+
+        let updates = { self.view.layoutIfNeeded() }
+        guard animated else {
+            updates()
+            return
+        }
+
+        let duration = (notification?.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.25
+        let curveRaw = (notification?.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue ?? UIView.AnimationCurve.easeInOut.rawValue
+        let options = UIView.AnimationOptions(rawValue: UInt(curveRaw << 16))
+        UIView.animate(withDuration: duration, delay: 0, options: [options, .beginFromCurrentState], animations: updates)
+    }
+
+    private func keyboardBottomOverlapPastSafeArea() -> CGFloat {
+        guard let keyboardFrame = latestKeyboardFrameInScreen else { return 0 }
+        let frame = view.convert(keyboardFrame, from: nil)
+        guard frame.intersects(view.bounds), frame.maxY >= view.bounds.maxY - 1 else { return 0 }
+        let overlap = max(0, view.bounds.maxY - frame.minY)
+        return max(0, overlap - view.safeAreaInsets.bottom)
     }
 
     private func moveCursor(direction: KeyboardAccessoryView.Arrow) {
