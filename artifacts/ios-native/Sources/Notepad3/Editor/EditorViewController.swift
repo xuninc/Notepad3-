@@ -462,8 +462,9 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         self.bottomToolbarHeight = bottomToolbarHeight
         self.bottomToolbarBottom = bottomToolbarBottom
 
-        // Mobile mode: [findBar] [tabStrip] [separator] [textView] [statusBar] [bottom toolbar@keyboard]
-        //              mobileFab floats bottom-right above the bottom toolbar.
+        // Mobile mode: [findBar] [tabStrip] [separator] [textView] [statusBar]
+        //              [mobileBottomBar] [bottom toolbar@keyboard]
+        //              mobileFab floats above the restored mobile bottom bar.
         mobileConstraints = [
             tabStrip.topAnchor.constraint(equalTo: findBar.bottomAnchor),
             tabStrip.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -477,8 +478,16 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
 
             statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            statusBar.bottomAnchor.constraint(equalTo: keyboardAccessory.topAnchor),
+            statusBar.bottomAnchor.constraint(equalTo: mobileBottomBar.topAnchor),
             statusBar.heightAnchor.constraint(equalToConstant: 24),
+
+            mobileBottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            mobileBottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            mobileBottomBar.bottomAnchor.constraint(equalTo: keyboardAccessory.topAnchor),
+            // Explicit height. MobileBottomBar has no intrinsic content size
+            // and its internal stack anchors to its own safeAreaLayoutGuide,
+            // which doesn't constrain the outer frame.
+            mobileBottomBar.heightAnchor.constraint(equalToConstant: 96),
 
             keyboardAccessory.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             keyboardAccessory.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -486,7 +495,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
             bottomToolbarHeight,
 
             mobileFab.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            mobileFab.bottomAnchor.constraint(equalTo: keyboardAccessory.topAnchor, constant: -12),
+            mobileFab.bottomAnchor.constraint(equalTo: mobileBottomBar.topAnchor, constant: -12),
         ]
 
         // Classic mode: [findBar] [titleBar] [aeroMenu] [classicToolbar] [tabStrip]
@@ -568,6 +577,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
                 setKeyboardSuppressed(false, focusIfShowing: false)
             }
             statusBar.isHidden = false
+            mobileBottomBar.isHidden = false
             keyboardAccessory.isHidden = false
             mobileFab.isHidden = false
             NSLayoutConstraint.activate(mobileConstraints)
