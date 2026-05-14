@@ -100,6 +100,7 @@ import com.corey.notepad3.editor.EditResult
 import com.corey.notepad3.editor.EditorCommands
 import com.corey.notepad3.editor.EditorGutter
 import com.corey.notepad3.editor.EditorHistory
+import com.corey.notepad3.editor.EditorLineIndex
 import com.corey.notepad3.editor.EditorStatus
 import com.corey.notepad3.editor.HighlightCategory
 import com.corey.notepad3.editor.LineDiff
@@ -811,6 +812,7 @@ fun NotepadApp(
                             selection = activeSelection,
                             readOnly = readMode,
                             fontSizeSp = displayOptions.fontSizeSp,
+                            editorFontFamily = displayOptions.editorFontFamily,
                             wordWrap = displayOptions.wordWrap,
                             showLineNumbers = layoutMode == EditorLayoutMode.CLASSIC && displayOptions.lineNumbers,
                             keyboardSuppressed = keyboardSuppressed,
@@ -1099,6 +1101,7 @@ fun NotepadApp(
                         onToggleHiddenAccessoryButton = editorPreferenceController::toggleHiddenAccessoryButton,
                         onFontSizeDown = { editorPreferenceController.adjustFontSize(-1) },
                         onFontSizeUp = { editorPreferenceController.adjustFontSize(1) },
+                        onEditorFontFamilySelect = editorPreferenceController::setEditorFontFamily,
                     )
                 }
             }
@@ -2821,6 +2824,7 @@ private fun PreferencesPage(
     onToggleHiddenAccessoryButton: (AccessoryToolbarButton) -> Unit,
     onFontSizeDown: () -> Unit,
     onFontSizeUp: () -> Unit,
+    onEditorFontFamilySelect: (EditorFontFamily) -> Unit,
 ) {
     BackHandler {
         preferencesBackDestination(destination)?.let(onNavigate) ?: onDismiss()
@@ -2980,6 +2984,14 @@ private fun PreferencesPage(
                             onDown = onFontSizeDown,
                             onUp = onFontSizeUp,
                         )
+                        EditorFontFamily.entries.forEach { fontFamily ->
+                            MenuActionRow(
+                                icon = fontFamily.preferenceIcon,
+                                title = fontFamily.displayTitle,
+                                palette = palette,
+                                checked = fontFamily == displayOptions.editorFontFamily,
+                            ) { onEditorFontFamilySelect(fontFamily) }
+                        }
                     }
                 }
             }
@@ -3334,6 +3346,7 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
     private var textPaddingBottomPx = 18
     private var gutterSidePaddingPx = 10
     private var bodySnapshot = ""
+    private var lineIndex = EditorLineIndex.EMPTY
     var syntaxHighlightBodySnapshot: String = ""
     var syntaxHighlightLanguage: DocumentLanguage? = null
     var syntaxHighlightPaletteKey: String = ""
@@ -3345,13 +3358,13 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
         }
     }
 
-    fun configureGutter(palette: Palette, showLineNumbers: Boolean) {
+    fun configureGutter(palette: Palette, showLineNumbers: Boolean, editorTypeface: Typeface) {
         this.showLineNumbers = showLineNumbers
         gutterBackgroundPaint.color = AndroidColor.parseColor(palette.muted)
         gutterDividerPaint.color = AndroidColor.parseColor(palette.border)
         gutterDividerPaint.strokeWidth = 1f
         lineNumberPaint.color = AndroidColor.parseColor(palette.mutedForeground)
-        lineNumberPaint.typeface = Typeface.MONOSPACE
+        lineNumberPaint.typeface = editorTypeface
         lineNumberPaint.textSize = textSize
         syncGutterPadding()
         invalidate()
@@ -3378,6 +3391,7 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
     override fun onTextChanged(text: CharSequence?, start: Int, lengthBefore: Int, lengthAfter: Int) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter)
         bodySnapshot = text?.toString().orEmpty()
+        lineIndex = EditorLineIndex.from(bodySnapshot)
         syncGutterPadding()
     }
 
@@ -3399,7 +3413,7 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
 
     private fun drawLineNumberGutter(canvas: Canvas) {
         if (!gutterReady || !showLineNumbers) return
-        val gutterWidth = gutterWidthPx(bodySnapshot)
+        val gutterWidth = gutterWidthPx(lineIndex.lineCount)
         val left = scrollX.toFloat()
         val top = scrollY.toFloat()
         val right = left + gutterWidth
@@ -3410,13 +3424,9 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
         val layout = layout ?: return
         val firstVisibleLine = layout.getLineForVertical(scrollY)
         val lastVisibleLine = layout.getLineForVertical(scrollY + height)
-        val visualLines = firstVisibleLine..lastVisibleLine
-        val lineStarts = visualLines.map { visualLine -> layout.getLineStart(visualLine) }
-        val logicalLines = EditorGutter.logicalLineNumbersAtSortedOffsets(bodySnapshot, lineStarts)
         var previousLogicalLine = 0
-        for (index in logicalLines.indices) {
-            val visualLine = firstVisibleLine + index
-            val logicalLine = logicalLines[index]
+        for (visualLine in firstVisibleLine..lastVisibleLine) {
+            val logicalLine = lineIndex.lineNumberAtOffset(layout.getLineStart(visualLine))
             if (logicalLine == previousLogicalLine) continue
             previousLogicalLine = logicalLine
             val baseline = getLineBounds(visualLine, lineBounds)
@@ -3433,7 +3443,7 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
         if (!gutterReady) return
         val left = if (showLineNumbers) {
             EditorGutter.totalLeftPaddingPx(
-                lineCount = EditorGutter.visibleLineCount(bodySnapshot),
+                lineCount = lineIndex.lineCount,
                 digitWidthPx = lineNumberPaint.measureText("0"),
                 sidePaddingPx = gutterSidePaddingPx,
                 textPaddingPx = textPaddingLeftPx,
@@ -3451,9 +3461,9 @@ private class EditorEditText(context: android.content.Context) : EditText(contex
         }
     }
 
-    private fun gutterWidthPx(body: String): Int =
+    private fun gutterWidthPx(lineCount: Int): Int =
         EditorGutter.gutterWidthPx(
-            lineCount = EditorGutter.visibleLineCount(body),
+            lineCount = lineCount,
             digitWidthPx = lineNumberPaint.measureText("0"),
             sidePaddingPx = gutterSidePaddingPx,
         )
@@ -3466,6 +3476,7 @@ private fun EditorTextArea(
     selection: TextSelection,
     readOnly: Boolean,
     fontSizeSp: Int,
+    editorFontFamily: EditorFontFamily,
     wordWrap: Boolean,
     showLineNumbers: Boolean,
     keyboardSuppressed: Boolean,
@@ -3500,7 +3511,7 @@ private fun EditorTextArea(
                 gravity = Gravity.TOP or Gravity.START
                 isSingleLine = false
                 minLines = 12
-                typeface = Typeface.MONOSPACE
+                typeface = editorFontFamily.typeface
                 inputType = InputType.TYPE_CLASS_TEXT or
                     InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                     InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -3508,7 +3519,7 @@ private fun EditorTextArea(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSizeSp.toFloat())
                 setHorizontallyScrolling(!wordWrap)
                 setEditorContentPadding(18, 18, 18, 18)
-                configureGutter(palette, showLineNumbers)
+                configureGutter(palette, showLineNumbers, editorFontFamily.typeface)
                 setText(document.body)
                 applySyntaxHighlighting(document.language, palette)
                 addTextChangedListener(object : TextWatcher {
@@ -3564,8 +3575,9 @@ private fun EditorTextArea(
             editText.setTextColor(palette.foreground.toColor().toArgb())
             editText.setBackgroundColor(palette.editorBackground.toColor().toArgb())
             editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSizeSp.toFloat())
+            editText.typeface = editorFontFamily.typeface
             editText.setHorizontallyScrolling(!wordWrap)
-            editText.configureGutter(palette, showLineNumbers)
+            editText.configureGutter(palette, showLineNumbers, editorFontFamily.typeface)
             if (bodyChangedExternally) {
                 editText.setText(document.body)
             }
@@ -3582,8 +3594,17 @@ private fun EditorTextArea(
 
 private fun EditorEditText.applySyntaxHighlighting(language: DocumentLanguage, palette: Palette) {
     val editable = text ?: return
-    val body = editable.toString()
     val paletteKey = syntaxHighlightPaletteKey(palette)
+    if (!SyntaxHighlighter.supports(language)) {
+        if (syntaxHighlightLanguage == language) return
+        clearSyntaxHighlightSpans(editable)
+        syntaxHighlightBodySnapshot = ""
+        syntaxHighlightLanguage = language
+        syntaxHighlightPaletteKey = paletteKey
+        return
+    }
+
+    val body = editable.toString()
     if (
         body == syntaxHighlightBodySnapshot &&
         language == syntaxHighlightLanguage &&
@@ -3593,7 +3614,7 @@ private fun EditorEditText.applySyntaxHighlighting(language: DocumentLanguage, p
     }
 
     val spans = editable.getSpans(0, editable.length, ForegroundColorSpan::class.java)
-    spans.forEach { editable.removeSpan(it) }
+    spans.forEach(editable::removeSpan)
 
     SyntaxHighlighter.plan(body, language).forEach { range ->
         editable.setSpan(
@@ -3606,6 +3627,11 @@ private fun EditorEditText.applySyntaxHighlighting(language: DocumentLanguage, p
     syntaxHighlightBodySnapshot = body
     syntaxHighlightLanguage = language
     syntaxHighlightPaletteKey = paletteKey
+}
+
+private fun clearSyntaxHighlightSpans(editable: Editable) {
+    val spans = editable.getSpans(0, editable.length, ForegroundColorSpan::class.java)
+    spans.forEach(editable::removeSpan)
 }
 
 private fun syntaxHighlightPaletteKey(palette: Palette): String =
@@ -4568,7 +4594,7 @@ private val PreferencesDestination.preferenceSubtitle: String
         PreferencesDestination.GENERAL -> ""
         PreferencesDestination.APPEARANCE -> "Themes and layout"
         PreferencesDestination.TOOLBAR -> "Rows, size, pinned and hidden buttons"
-        PreferencesDestination.EDITOR -> "Text wrapping, line numbers, font size"
+        PreferencesDestination.EDITOR -> "Fonts, wrapping, line numbers"
     }
 
 private val AccessoryToolbarContentMode.preferenceIcon: ImageVector
@@ -4576,6 +4602,22 @@ private val AccessoryToolbarContentMode.preferenceIcon: ImageVector
         AccessoryToolbarContentMode.ICON_AND_TEXT -> Icons.Filled.Keyboard
         AccessoryToolbarContentMode.ICON_ONLY -> Icons.Filled.Visibility
         AccessoryToolbarContentMode.TEXT_ONLY -> Icons.Filled.TextFields
+    }
+
+private val EditorFontFamily.preferenceIcon: ImageVector
+    get() = when (this) {
+        EditorFontFamily.MONOSPACE -> Icons.Filled.Code
+        EditorFontFamily.SANS -> Icons.Filled.TextFields
+        EditorFontFamily.SERIF -> Icons.AutoMirrored.Filled.Article
+        EditorFontFamily.DEFAULT -> Icons.Filled.FontDownload
+    }
+
+private val EditorFontFamily.typeface: Typeface
+    get() = when (this) {
+        EditorFontFamily.MONOSPACE -> Typeface.MONOSPACE
+        EditorFontFamily.SANS -> Typeface.SANS_SERIF
+        EditorFontFamily.SERIF -> Typeface.SERIF
+        EditorFontFamily.DEFAULT -> Typeface.DEFAULT
     }
 
 private val AccessoryToolbarButton.preferenceIcon: ImageVector

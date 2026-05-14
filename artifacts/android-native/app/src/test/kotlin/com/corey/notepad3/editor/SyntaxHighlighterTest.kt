@@ -68,6 +68,9 @@ class SyntaxHighlighterTest {
 
     @Test
     fun skipsPlainAndMarkdownDocuments() {
+        assertFalse(SyntaxHighlighter.supports(DocumentLanguage.PLAIN))
+        assertFalse(SyntaxHighlighter.supports(DocumentLanguage.MARKDOWN))
+        assertTrue(SyntaxHighlighter.supports(DocumentLanguage.KOTLIN))
         assertEquals(emptyList<HighlightRange>(), SyntaxHighlighter.plan("return 1", DocumentLanguage.PLAIN))
         assertEquals(emptyList<HighlightRange>(), SyntaxHighlighter.plan("# return 1", DocumentLanguage.MARKDOWN))
     }

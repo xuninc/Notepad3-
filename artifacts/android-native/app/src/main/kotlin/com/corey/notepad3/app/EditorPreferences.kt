@@ -75,9 +75,23 @@ enum class AccessoryToolbarContentMode(val storageName: String, val displayTitle
     }
 }
 
+enum class EditorFontFamily(val storageName: String, val displayTitle: String) {
+    MONOSPACE("monospace", "Monospace"),
+    SANS("sans", "Sans"),
+    SERIF("serif", "Serif"),
+    DEFAULT("default", "System"),
+    ;
+
+    companion object {
+        fun fromStorageName(value: String): EditorFontFamily? =
+            entries.firstOrNull { it.storageName == value }
+    }
+}
+
 data class EditorDisplayOptions(
     val layoutMode: EditorLayoutMode = EditorLayoutMode.MOBILE,
     val fontSizeSp: Int = DEFAULT_FONT_SIZE_SP,
+    val editorFontFamily: EditorFontFamily = EditorFontFamily.MONOSPACE,
     val wordWrap: Boolean = true,
     val lineNumbers: Boolean = true,
     val accessoryBar: Boolean = true,
@@ -171,6 +185,10 @@ class EditorPreferenceController(private val preferences: EditorPreferences) {
         setDisplayOptions(displayOptions.value.withFontDelta(delta))
     }
 
+    fun setEditorFontFamily(fontFamily: EditorFontFamily) {
+        setDisplayOptions(displayOptions.value.copy(editorFontFamily = fontFamily))
+    }
+
     fun toggleWordWrap() {
         setDisplayOptions(displayOptions.value.copy(wordWrap = !displayOptions.value.wordWrap))
     }
@@ -239,6 +257,7 @@ class AndroidEditorPreferences(context: Context) : EditorPreferences {
         prefs.edit()
             .putString(KEY_LAYOUT_MODE, options.layoutMode.storageName)
             .putInt(KEY_FONT_SIZE_SP, options.fontSizeSp)
+            .putString(KEY_EDITOR_FONT_FAMILY, options.editorFontFamily.storageName)
             .putBoolean(KEY_WORD_WRAP, options.wordWrap)
             .putBoolean(KEY_LINE_NUMBERS, options.lineNumbers)
             .putBoolean(KEY_ACCESSORY_BAR, options.accessoryBar)
@@ -261,6 +280,9 @@ class AndroidEditorPreferences(context: Context) : EditorPreferences {
             layoutMode = decodeLayoutMode(),
             fontSizeSp = intPreference(KEY_FONT_SIZE_SP, EditorDisplayOptions.DEFAULT_FONT_SIZE_SP)
                 .coerceIn(EditorDisplayOptions.MIN_FONT_SIZE_SP, EditorDisplayOptions.MAX_FONT_SIZE_SP),
+            editorFontFamily = stringPreference(KEY_EDITOR_FONT_FAMILY)
+                ?.let(EditorFontFamily::fromStorageName)
+                ?: EditorFontFamily.MONOSPACE,
             wordWrap = booleanPreference(KEY_WORD_WRAP, true),
             lineNumbers = booleanPreference(KEY_LINE_NUMBERS, true),
             accessoryBar = booleanPreference(KEY_ACCESSORY_BAR, true),
@@ -338,6 +360,7 @@ class AndroidEditorPreferences(context: Context) : EditorPreferences {
         private const val LEGACY_PREFS_NAME = "notepad3" + "pp"
         private const val KEY_LAYOUT_MODE = "notepad3.layoutMode"
         private const val KEY_FONT_SIZE_SP = "notepad3.fontSizeSp"
+        private const val KEY_EDITOR_FONT_FAMILY = "notepad3.editorFontFamily"
         private const val KEY_WORD_WRAP = "notepad3.wordWrap"
         private const val KEY_LINE_NUMBERS = "notepad3.lineNumbers"
         private const val KEY_ACCESSORY_BAR = "notepad3.accessoryBar"

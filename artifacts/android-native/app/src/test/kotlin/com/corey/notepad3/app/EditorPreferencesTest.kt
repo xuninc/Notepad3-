@@ -40,19 +40,31 @@ class EditorPreferencesTest {
     fun controllerAdjustsEditorDisplayOptionsWithinUsableBounds() {
         val controller = EditorPreferenceController(InMemoryEditorPreferences())
 
+        assertEquals(EditorFontFamily.MONOSPACE, controller.displayOptions.value.editorFontFamily)
         controller.adjustFontSize(40)
         controller.toggleWordWrap()
         controller.toggleLineNumbers()
         controller.toggleAccessoryBar()
+        controller.setEditorFontFamily(EditorFontFamily.SANS)
 
         assertEquals(24, controller.displayOptions.value.fontSizeSp)
         assertEquals(false, controller.displayOptions.value.wordWrap)
         assertEquals(false, controller.displayOptions.value.lineNumbers)
         assertEquals(false, controller.displayOptions.value.accessoryBar)
+        assertEquals(EditorFontFamily.SANS, controller.displayOptions.value.editorFontFamily)
 
         controller.adjustFontSize(-40)
 
         assertEquals(11, controller.displayOptions.value.fontSizeSp)
+    }
+
+    @Test
+    fun editorFontFamiliesRoundTripThroughStorageNames() {
+        assertEquals(EditorFontFamily.MONOSPACE, EditorFontFamily.fromStorageName("monospace"))
+        assertEquals(EditorFontFamily.SANS, EditorFontFamily.fromStorageName("sans"))
+        assertEquals(EditorFontFamily.SERIF, EditorFontFamily.fromStorageName("serif"))
+        assertEquals(EditorFontFamily.DEFAULT, EditorFontFamily.fromStorageName("default"))
+        assertEquals(null, EditorFontFamily.fromStorageName("missing"))
     }
 
     @Test

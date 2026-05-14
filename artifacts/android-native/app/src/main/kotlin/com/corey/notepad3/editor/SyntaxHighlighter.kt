@@ -18,12 +18,15 @@ data class HighlightRange(
 object SyntaxHighlighter {
     const val DEFAULT_MAX_TEXT_LENGTH: Int = 200_000
 
+    fun supports(language: DocumentLanguage): Boolean =
+        language != DocumentLanguage.PLAIN && language != DocumentLanguage.MARKDOWN
+
     fun plan(
         text: String,
         language: DocumentLanguage,
         maxTextLength: Int = DEFAULT_MAX_TEXT_LENGTH,
     ): List<HighlightRange> {
-        if (text.isEmpty() || text.length > maxTextLength || language == DocumentLanguage.PLAIN || language == DocumentLanguage.MARKDOWN) {
+        if (text.isEmpty() || text.length > maxTextLength || !supports(language)) {
             return emptyList()
         }
 
