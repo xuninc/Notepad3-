@@ -31,13 +31,15 @@ enum class VirtualTrackpadSize(
 ) {
     SMALL(TrackpadBounds(width = 180f, height = 132f)),
     MEDIUM(TrackpadBounds(width = 220f, height = 160f)),
-    LARGE(TrackpadBounds(width = 270f, height = 198f));
+    LARGE(TrackpadBounds(width = 270f, height = 198f)),
+    EXTRA_LARGE(TrackpadBounds(width = 336f, height = 248f));
 
     fun next(): VirtualTrackpadSize =
         when (this) {
             SMALL -> MEDIUM
             MEDIUM -> LARGE
-            LARGE -> SMALL
+            LARGE -> EXTRA_LARGE
+            EXTRA_LARGE -> SMALL
         }
 }
 

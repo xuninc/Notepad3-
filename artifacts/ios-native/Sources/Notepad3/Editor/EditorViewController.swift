@@ -49,6 +49,7 @@ final class EditorViewController: UIViewController, UITextViewDelegate {
         CGSize(width: 180, height: 132),
         CGSize(width: 220, height: 160),
         CGSize(width: 270, height: 198),
+        CGSize(width: 336, height: 248),
     ]
 
     // Mode state (not persisted)

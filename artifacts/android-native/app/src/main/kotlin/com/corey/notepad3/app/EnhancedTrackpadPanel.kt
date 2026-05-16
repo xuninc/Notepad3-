@@ -206,11 +206,6 @@ private fun TrackpadDragSurface(
                 color = palette.mutedForeground.toTrackpadColor(),
                 style = MaterialTheme.typography.labelSmall,
             )
-            Text(
-                text = "${state.size.name.lowercase()}  ${state.bounds.width.toInt()}x${state.bounds.height.toInt()}",
-                color = palette.mutedForeground.toTrackpadColor().copy(alpha = 0.72f),
-                style = MaterialTheme.typography.labelSmall,
-            )
         }
     }
 }

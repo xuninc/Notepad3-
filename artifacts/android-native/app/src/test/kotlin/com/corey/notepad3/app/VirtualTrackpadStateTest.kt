@@ -7,18 +7,21 @@ import org.junit.Test
 
 class VirtualTrackpadStateTest {
     @Test
-    fun defaultSizeStartsAtMediumAndCyclesThroughLargeSmallMedium() {
+    fun defaultSizeStartsAtMediumAndCyclesThroughLargeExtraLargeSmallMedium() {
         val initial = VirtualTrackpadState()
 
         assertEquals(VirtualTrackpadSize.MEDIUM, initial.size)
         assertEquals(TrackpadBounds(width = 220f, height = 160f), initial.bounds)
 
         val large = initial.cycleSize(container = TrackpadBounds(width = 500f, height = 500f))
-        val small = large.cycleSize(container = TrackpadBounds(width = 500f, height = 500f))
+        val extraLarge = large.cycleSize(container = TrackpadBounds(width = 500f, height = 500f))
+        val small = extraLarge.cycleSize(container = TrackpadBounds(width = 500f, height = 500f))
         val medium = small.cycleSize(container = TrackpadBounds(width = 500f, height = 500f))
 
         assertEquals(VirtualTrackpadSize.LARGE, large.size)
         assertEquals(TrackpadBounds(width = 270f, height = 198f), large.bounds)
+        assertEquals(VirtualTrackpadSize.EXTRA_LARGE, extraLarge.size)
+        assertEquals(TrackpadBounds(width = 336f, height = 248f), extraLarge.bounds)
         assertEquals(VirtualTrackpadSize.SMALL, small.size)
         assertEquals(TrackpadBounds(width = 180f, height = 132f), small.bounds)
         assertEquals(VirtualTrackpadSize.MEDIUM, medium.size)
